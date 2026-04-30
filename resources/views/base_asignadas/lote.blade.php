@@ -21,11 +21,13 @@
 
 @if(auth()->user()?->role === 'supervisor')
 <h3>Asignacion por lote</h3>
-<p>Selecciona 1 comercial para asignar todo, o varios para distribuir equitativamente (round-robin).</p>
+<p>Solo se reasignan/desasignan registros sin gestion (0%). Los ya gestionados no se tocan.</p>
+<p>Disponibles sin gestion: <strong>{{ $totalSinGestion }}</strong></p>
 <form method="post" action="{{ route('base-asignada.lote.asignar', ['loteNombre' => $loteNombre]) }}">
     @csrf
     <label>Comerciales</label>
     <select name="comerciales[]" multiple size="6" required>
+        <option value="no_asignar">No asignar</option>
         @foreach($comerciales as $comercial)
             <option value="{{ $comercial->id }}">{{ $comercial->name }} ({{ $comercial->email }})</option>
         @endforeach

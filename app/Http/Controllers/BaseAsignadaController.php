@@ -7,6 +7,7 @@ use App\Models\Estado;
 use App\Models\Gestion;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class BaseAsignadaController extends Controller
@@ -107,8 +108,11 @@ class BaseAsignadaController extends Controller
         }
         $comerciales = User::where('role', 'comercial')->orderBy('name')->get();
         $estadosFiltro = Estado::where('activo', true)->orderBy('nombre')->get();
+        $totalSinGestion = BaseAsignada::where('lote_nombre', $loteNombre)
+            ->whereDoesntHave('gestiones')
+            ->count();
 
-        return view('base_asignadas.lote', compact('bases', 'loteNombre', 'comerciales', 'estadosFiltro'));
+        return view('base_asignadas.lote', compact('bases', 'loteNombre', 'comerciales', 'estadosFiltro', 'totalSinGestion'));
     }
 
     /**
@@ -242,7 +246,11 @@ class BaseAsignadaController extends Controller
     public function aprobarPendiente(string $id)
     {
         $this->forbidIfNotSupervisor();
+        $pendienteId = Estado::where('slug', 'pendiente-aprobacion-supervisor')->value('id');
         $base = BaseAsignada::findOrFail($id);
+        if ($base->estado_id !== $pendienteId) {
+            return back()->withErrors(['estado_id' => 'Solo se pueden aprobar registros en estado Pendiente de aprobacion (supervisor).']);
+        }
         $base->update([
             'estado_id' => Estado::where('slug', 'cerrado')->value('id'),
             'motivo_devolucion' => null,
@@ -258,6 +266,10 @@ class BaseAsignadaController extends Controller
             'motivo_devolucion' => ['required', 'string', 'min:5', 'max:2000'],
         ]);
         $base = BaseAsignada::findOrFail($id);
+        $pendienteId = Estado::where('slug', 'pendiente-aprobacion-supervisor')->value('id');
+        if ($base->estado_id !== $pendienteId) {
+            return back()->withErrors(['estado_id' => 'Solo se pueden devolver registros en estado Pendiente de aprobacion (supervisor).']);
+        }
         $devueltaId = Estado::where('slug', 'devuelta')->value('id');
         $motivo = $request->input('motivo_devolucion');
 
@@ -479,26 +491,53 @@ class BaseAsignadaController extends Controller
 
         $data = $request->validate([
             'comerciales' => ['required', 'array', 'min:1'],
-            'comerciales.*' => ['required', 'exists:users,id'],
+            'comerciales.*' => ['required'],
         ]);
 
-        $comerciales = User::whereIn('id', $data['comerciales'])->where('role', 'comercial')->pluck('id')->values();
-        if ($comerciales->isEmpty()) {
-            return back()->withErrors(['comerciales' => 'Selecciona al menos un comercial valido.']);
+        $seleccion = collect($data['comerciales'])->map(fn ($v) => (string) $v)->values();
+        $permiteNoAsignar = $seleccion->contains('no_asignar');
+        $idsComerciales = $seleccion
+            ->filter(fn ($v) => $v !== 'no_asignar')
+            ->map(fn ($v) => (int) $v)
+            ->filter(fn ($v) => $v > 0)
+            ->unique()
+            ->values();
+
+        $comercialesValidos = User::whereIn('id', $idsComerciales)->where('role', 'comercial')->pluck('id')->values();
+        if ($idsComerciales->isNotEmpty() && $comercialesValidos->count() !== $idsComerciales->count()) {
+            return back()->withErrors(['comerciales' => 'Selecciona comerciales validos.']);
+        }
+        if ($comercialesValidos->isEmpty() && !$permiteNoAsignar) {
+            return back()->withErrors(['comerciales' => 'Selecciona al menos un comercial o la opcion No asignar.']);
         }
 
-        $registros = BaseAsignada::where('lote_nombre', $loteNombre)->orderBy('id')->get();
-        $total = $registros->count();
-        if ($total === 0) {
-            return back()->withErrors(['comerciales' => 'El lote no tiene registros.']);
+        $registrosSinGestion = BaseAsignada::where('lote_nombre', $loteNombre)
+            ->whereDoesntHave('gestiones')
+            ->orderBy('id')
+            ->get();
+
+        if ($registrosSinGestion->isEmpty()) {
+            return back()->withErrors(['comerciales' => 'No hay registros disponibles para reasignar: todos tienen gestion registrada.']);
         }
 
-        foreach ($registros as $index => $registro) {
-            $asignado = $comerciales[$index % $comerciales->count()];
-            $registro->update(['asesor_id' => $asignado, 'supervisor_id' => auth()->id()]);
+        $destinos = $comercialesValidos->map(fn ($id) => (int) $id)->values();
+        if ($permiteNoAsignar) {
+            $destinos->push(0);
         }
+
+        $actualizados = 0;
+        DB::transaction(function () use ($registrosSinGestion, $destinos, &$actualizados) {
+            foreach ($registrosSinGestion as $index => $registro) {
+                $destino = $destinos[$index % $destinos->count()];
+                $registro->update([
+                    'asesor_id' => $destino === 0 ? null : $destino,
+                    'supervisor_id' => auth()->id(),
+                ]);
+                $actualizados++;
+            }
+        });
 
         return redirect()->route('base-asignada.lote', ['loteNombre' => $loteNombre])
-            ->with('ok', "Lote asignado. Registros repartidos: {$total}.");
+            ->with('ok', "Asignacion aplicada solo a registros sin gestion. Reasignados/desasignados: {$actualizados}.");
     }
 }

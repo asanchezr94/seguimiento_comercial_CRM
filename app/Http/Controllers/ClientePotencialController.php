@@ -8,12 +8,30 @@ use Illuminate\Http\Request;
 
 class ClientePotencialController extends Controller
 {
+    private function isSupervisor(): bool
+    {
+        return auth()->user()?->role === 'supervisor';
+    }
+
+    private function authorizeCliente(ClientePotencial $cliente): void
+    {
+        if ($this->isSupervisor()) {
+            return;
+        }
+
+        abort_unless($cliente->asesor_id === auth()->id(), 403);
+    }
+
     /**
      * Display a listing of the resource.
      */
     public function index()
     {
-        $clientes = ClientePotencial::with('estado')->latest()->get();
+        $query = ClientePotencial::with('estado')->latest();
+        if (!$this->isSupervisor()) {
+            $query->where('asesor_id', auth()->id());
+        }
+        $clientes = $query->get();
         return view('clientes_potenciales.index', compact('clientes'));
     }
 
@@ -41,6 +59,12 @@ class ClientePotencialController extends Controller
             'observaciones' => ['nullable', 'string'],
         ]);
 
+        if (!$this->isSupervisor()) {
+            $data['asesor_id'] = auth()->id();
+        } elseif (empty($data['asesor_id'])) {
+            $data['asesor_id'] = auth()->id();
+        }
+
         ClientePotencial::create($data);
         return redirect()->route('clientes-potenciales.index')->with('ok', 'Registro creado.');
     }
@@ -51,6 +75,7 @@ class ClientePotencialController extends Controller
     public function show(string $id)
     {
         $cliente = ClientePotencial::with(['estado', 'gestiones.estado'])->findOrFail($id);
+        $this->authorizeCliente($cliente);
         $estados = Estado::where('activo', true)->orderBy('nombre')->get();
         return view('clientes_potenciales.show', compact('cliente', 'estados'));
     }
@@ -61,6 +86,7 @@ class ClientePotencialController extends Controller
     public function edit(string $id)
     {
         $cliente = ClientePotencial::findOrFail($id);
+        $this->authorizeCliente($cliente);
         $estados = Estado::where('activo', true)->orderBy('nombre')->get();
         return view('clientes_potenciales.edit', compact('cliente', 'estados'));
     }
@@ -70,6 +96,9 @@ class ClientePotencialController extends Controller
      */
     public function update(Request $request, string $id)
     {
+        $cliente = ClientePotencial::findOrFail($id);
+        $this->authorizeCliente($cliente);
+
         $data = $request->validate([
             'nombre' => ['required', 'string', 'max:255'],
             'telefono' => ['nullable', 'string', 'max:50'],
@@ -80,7 +109,11 @@ class ClientePotencialController extends Controller
             'observaciones' => ['nullable', 'string'],
         ]);
 
-        ClientePotencial::findOrFail($id)->update($data);
+        if (!$this->isSupervisor()) {
+            unset($data['asesor_id']);
+        }
+
+        $cliente->update($data);
         return redirect()->route('clientes-potenciales.index')->with('ok', 'Registro actualizado.');
     }
 
@@ -89,7 +122,9 @@ class ClientePotencialController extends Controller
      */
     public function destroy(string $id)
     {
-        ClientePotencial::findOrFail($id)->delete();
+        $cliente = ClientePotencial::findOrFail($id);
+        $this->authorizeCliente($cliente);
+        $cliente->delete();
         return redirect()->route('clientes-potenciales.index')->with('ok', 'Registro eliminado.');
     }
 }
