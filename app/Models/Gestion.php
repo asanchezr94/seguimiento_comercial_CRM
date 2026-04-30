@@ -36,4 +36,9 @@ class Gestion extends Model
     {
         return $this->belongsTo(Estado::class);
     }
+
+    public function asesor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'asesor_id');
+    }
 }

@@ -79,17 +79,18 @@
 
 <h3>Historial</h3>
 <table>
-    <thead><tr><th>Fecha</th><th>Tipo</th><th>Estado</th><th>Detalle</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Registrado por</th><th>Tipo</th><th>Estado</th><th>Detalle</th></tr></thead>
     <tbody>
         @forelse($base->gestiones as $gestion)
             <tr>
                 <td>{{ $gestion->created_at }}</td>
+                <td>{{ $gestion->asesor?->name ?? 'N/A' }}</td>
                 <td>{{ $gestion->tipo }}</td>
                 <td>{{ $gestion->estado?->nombre }}</td>
                 <td>{{ $gestion->detalle }}</td>
             </tr>
         @empty
-            <tr><td colspan="4">Sin gestiones.</td></tr>
+            <tr><td colspan="5">Sin gestiones.</td></tr>
         @endforelse
     </tbody>
 </table>

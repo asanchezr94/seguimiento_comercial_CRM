@@ -24,6 +24,7 @@
             <a href="{{ route('clientes-potenciales.index') }}">Clientes potenciales</a>
             @if(auth()->user()->role === 'comercial')
                 <a href="{{ route('base-asignada.cerradas') }}">Mis cerrados</a>
+                <a href="{{ route('base-asignada.pendientes-comercial') }}">Pendientes por aprobar</a>
             @endif
             @if(auth()->user()->role === 'supervisor')
                 <a href="{{ route('base-asignada.pendientes') }}">Gestiones pendientes por aprobar</a>

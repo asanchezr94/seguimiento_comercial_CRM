@@ -17,6 +17,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     Route::post('base-asignada/importar', [BaseAsignadaController::class, 'importar'])->name('base-asignada.importar');
     Route::get('base-asignada-cerradas', [BaseAsignadaController::class, 'cerradasComercial'])->name('base-asignada.cerradas');
+    Route::get('base-asignada-pendientes-comercial', [BaseAsignadaController::class, 'pendientesComercial'])->name('base-asignada.pendientes-comercial');
     Route::post('base-asignada/{id}/cambiar-estado-supervisor', [BaseAsignadaController::class, 'cambiarEstadoSupervisor'])->name('base-asignada.cambiar-estado-supervisor');
     Route::post('base-asignada/{id}/reabrir-contactado', [BaseAsignadaController::class, 'reabrirAContactado'])->name('base-asignada.reabrir-contactado');
     Route::get('supervisor/comerciales', [BaseAsignadaController::class, 'comercialesSupervisor'])->name('supervisor.comerciales');

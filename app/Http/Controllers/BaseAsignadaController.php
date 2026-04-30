@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\BaseAsignada;
 use App\Models\Estado;
+use App\Models\Gestion;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -44,6 +45,8 @@ class BaseAsignadaController extends Controller
     {
         $query = BaseAsignada::select('lote_nombre')
             ->selectRaw('count(*) as total')
+            ->selectRaw('count(distinct case when exists (select 1 from gestions where gestions.base_asignada_id = base_asignadas.id) then base_asignadas.id end) as gestionados')
+            ->selectRaw('min(created_at) as fecha_carga')
             ->whereNotNull('lote_nombre')
             ->where('lote_nombre', '!=', '');
 
@@ -57,6 +60,11 @@ class BaseAsignadaController extends Controller
         }
 
         $lotes = $query->groupBy('lote_nombre')->orderBy('lote_nombre')->get();
+        $lotes->each(function ($lote) {
+            $total = (int) $lote->total;
+            $gestionados = (int) $lote->gestionados;
+            $lote->porcentaje_gestion = $total > 0 ? round(($gestionados / $total) * 100, 1) : 0;
+        });
         return view('base_asignadas.index', compact('lotes'));
     }
 
@@ -146,7 +154,7 @@ class BaseAsignadaController extends Controller
      */
     public function show(string $id)
     {
-        $base = BaseAsignada::with(['estado', 'gestiones.estado', 'asesor', 'supervisor'])->findOrFail($id);
+        $base = BaseAsignada::with(['estado', 'gestiones.estado', 'gestiones.asesor', 'asesor', 'supervisor'])->findOrFail($id);
         if (!$this->isSupervisor() && $base->asesor_id !== auth()->id()) {
             abort(403);
         }
@@ -166,6 +174,19 @@ class BaseAsignadaController extends Controller
             ->get();
 
         return view('base_asignadas.cerradas', compact('bases'));
+    }
+
+    public function pendientesComercial()
+    {
+        abort_unless(auth()->user()?->role === 'comercial', 403);
+        $pendienteId = Estado::where('slug', 'pendiente-aprobacion-supervisor')->value('id');
+        $bases = BaseAsignada::with(['estado'])
+            ->where('asesor_id', auth()->id())
+            ->where('estado_id', $pendienteId)
+            ->latest('cierre_solicitado_at')
+            ->get();
+
+        return view('base_asignadas.pendientes_comercial', compact('bases'));
     }
 
     public function comercialesSupervisor()
@@ -237,13 +258,24 @@ class BaseAsignadaController extends Controller
             'motivo_devolucion' => ['required', 'string', 'min:5', 'max:2000'],
         ]);
         $base = BaseAsignada::findOrFail($id);
+        $devueltaId = Estado::where('slug', 'devuelta')->value('id');
+        $motivo = $request->input('motivo_devolucion');
+
         $base->update([
-            'estado_id' => Estado::where('slug', 'devuelta')->value('id'),
+            'estado_id' => $devueltaId,
             'efectivo' => null,
             'monto_linea_credito' => null,
             'cierre_solicitado_at' => null,
             'cierre_solicitado_por' => null,
-            'motivo_devolucion' => $request->input('motivo_devolucion'),
+            'motivo_devolucion' => $motivo,
+        ]);
+
+        Gestion::create([
+            'asesor_id' => auth()->id(),
+            'estado_id' => $devueltaId,
+            'base_asignada_id' => $base->id,
+            'tipo' => 'devolucion_supervisor',
+            'detalle' => "Devolucion de supervisor: {$motivo}",
         ]);
 
         return redirect()->route('base-asignada.pendientes')->with('ok', 'Gestion devuelta al comercial.');

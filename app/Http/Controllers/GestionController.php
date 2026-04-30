@@ -21,6 +21,11 @@ class GestionController extends Controller
 
     public function store(Request $request)
     {
+        $user = auth()->user();
+        $esSupervisor = $user?->role === 'supervisor';
+        $base = null;
+        $cliente = null;
+
         $data = $request->validate([
             'base_asignada_id' => ['nullable', 'exists:base_asignadas,id'],
             'cliente_potencial_id' => ['nullable', 'exists:cliente_potencials,id'],
@@ -39,10 +44,19 @@ class GestionController extends Controller
 
         if ($request->filled('base_asignada_id')) {
             $base = BaseAsignada::with('estado')->findOrFail($request->input('base_asignada_id'));
+            if (!$esSupervisor && $base->asesor_id !== $user?->id) {
+                abort(403);
+            }
             $esCerrado = $base->estado?->slug === 'cerrado';
-            $esSupervisor = auth()->user()?->role === 'supervisor';
             if ($esCerrado && !$esSupervisor) {
                 return back()->withErrors(['estado_id' => 'Este registro esta cerrado. Solo supervisor puede reabrirlo.'])->withInput();
+            }
+        }
+
+        if ($request->filled('cliente_potencial_id')) {
+            $cliente = ClientePotencial::findOrFail($request->input('cliente_potencial_id'));
+            if (!$esSupervisor && $cliente->asesor_id !== $user?->id) {
+                abort(403);
             }
         }
 
@@ -57,10 +71,22 @@ class GestionController extends Controller
             $data['estado_id'] = $estadoPendienteId;
         }
 
+        if (!$esCierre && empty($data['estado_id'])) {
+            if ($base) {
+                $data['estado_id'] = $base->estado_id;
+            } elseif ($cliente) {
+                $data['estado_id'] = $cliente->estado_id;
+            }
+        }
+
+        $data['asesor_id'] = $user?->id;
         $gestion = Gestion::create($data);
 
         if ($gestion->base_asignada_id) {
-            $update = ['estado_id' => $gestion->estado_id];
+            $update = [];
+            if (!is_null($gestion->estado_id)) {
+                $update['estado_id'] = $gestion->estado_id;
+            }
             if ($request->filled('linea_credito')) {
                 $update['linea_credito'] = $request->input('linea_credito');
             }

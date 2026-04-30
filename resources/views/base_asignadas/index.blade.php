@@ -26,7 +26,9 @@
     <thead>
         <tr>
             <th>Lote</th>
+            <th>Fecha carga</th>
             <th>Total registros</th>
+            <th>% gestion</th>
             <th>Acciones</th>
         </tr>
     </thead>
@@ -34,13 +36,15 @@
         @forelse ($lotes as $lote)
         <tr>
             <td>{{ $lote->lote_nombre }}</td>
+            <td>{{ $lote->fecha_carga ? \Illuminate\Support\Carbon::parse($lote->fecha_carga)->format('d/m/Y H:i') : 'N/A' }}</td>
             <td>{{ $lote->total }}</td>
+            <td>{{ number_format((float) $lote->porcentaje_gestion, 1) }}%</td>
             <td class="actions">
                 <a href="{{ route('base-asignada.lote', ['loteNombre' => $lote->lote_nombre]) }}">Ver lote</a>
             </td>
         </tr>
         @empty
-        <tr><td colspan="3">Sin lotes.</td></tr>
+        <tr><td colspan="5">Sin lotes.</td></tr>
         @endforelse
     </tbody>
 </table>
