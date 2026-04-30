@@ -17,7 +17,31 @@
     <p><strong>Motivo de devolucion (supervisor):</strong> {{ $base->motivo_devolucion }}</p>
 @endif
 
+@php($esCerrado = $base->estado?->slug === 'cerrado')
+@php($esSupervisor = auth()->user()?->role === 'supervisor')
+@if($esCerrado && !$esSupervisor)
+    <p><strong>Registro cerrado:</strong> no se puede editar. Si necesitas cambios, solicita reapertura al supervisor.</p>
+@endif
+@if($esCerrado && $esSupervisor)
+    <h3>Reabrir / cambiar estado (Supervisor)</h3>
+    <form method="post" action="{{ route('base-asignada.reabrir-contactado', $base->id) }}" style="margin-bottom:10px;">
+        @csrf
+        <button type="submit">Reabrir y llevar a Contactado</button>
+    </form>
+    <form method="post" action="{{ route('base-asignada.cambiar-estado-supervisor', $base->id) }}">
+        @csrf
+        <label>Nuevo estado</label>
+        <select name="estado_id" required>
+            @foreach($estados as $estado)
+                <option value="{{ $estado->id }}">{{ $estado->nombre }}</option>
+            @endforeach
+        </select>
+        <button type="submit">Guardar cambio de estado</button>
+    </form>
+@endif
+
 <h3>Nueva gestion</h3>
+@if(!$esCerrado || $esSupervisor)
 <form method="post" action="{{ route('gestiones.store') }}">
     @csrf
     <input type="hidden" name="base_asignada_id" value="{{ $base->id }}">
@@ -32,6 +56,13 @@
     </select>
     <label>Detalle de gestion</label>
     <textarea name="detalle" required>{{ old('detalle') }}</textarea>
+    <label>Linea de credito</label>
+    <select name="linea_credito">
+        <option value="">No cambiar</option>
+        @foreach($lineasCredito as $linea)
+            <option value="{{ $linea }}" @selected(old('linea_credito', $base->linea_credito) === $linea)>{{ $linea }}</option>
+        @endforeach
+    </select>
     <label>Efectivo</label>
     <select name="efectivo" id="efectivo" disabled>
         <option value="">Seleccione</option>
@@ -44,6 +75,7 @@
     <input type="datetime-local" name="proxima_gestion_at" value="{{ old('proxima_gestion_at') }}">
     <button type="submit">Registrar gestion</button>
 </form>
+@endif
 
 <h3>Historial</h3>
 <table>

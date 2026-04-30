@@ -9,6 +9,7 @@
             <th>Cliente</th>
             <th>Cedula</th>
             <th>Comercial</th>
+            <th>Estado</th>
             <th>Efectivo</th>
             <th>Monto</th>
             <th>Acciones</th>
@@ -21,9 +22,11 @@
                 <td>{{ $base->nombre }}</td>
                 <td>{{ $base->cedula }}</td>
                 <td>{{ $base->asesor?->name }}</td>
+                <td>{{ $base->estado?->nombre ?? 'N/A' }}</td>
                 <td>{{ is_null($base->efectivo) ? 'N/A' : ($base->efectivo ? 'SI' : 'NO') }}</td>
                 <td>{{ is_null($base->monto_linea_credito) ? 'N/A' : number_format((float)$base->monto_linea_credito, 0, ',', '.') }}</td>
                 <td class="actions">
+                    <a href="{{ route('base-asignada.show', $base->id) }}">Gestionar</a>
                     <form method="post" action="{{ route('base-asignada.pendientes.aprobar', $base->id) }}" class="inline">
                         @csrf
                         <button type="submit">Aprobar</button>
@@ -36,7 +39,7 @@
                 </td>
             </tr>
         @empty
-            <tr><td colspan="7">No hay gestiones pendientes.</td></tr>
+            <tr><td colspan="8">No hay gestiones pendientes.</td></tr>
         @endforelse
     </tbody>
 </table>

@@ -10,6 +10,15 @@ use Illuminate\Http\Request;
 
 class GestionController extends Controller
 {
+    private const LINEAS_CREDITO = [
+        'LIBRE INVERSION',
+        'CREDIAPORTES',
+        'CREDITO EDUCATIVO',
+        'CREDITO ROTATIVO',
+        'CREDITO PRIMA',
+        'ADELANTO DE SALARIO',
+    ];
+
     public function store(Request $request)
     {
         $data = $request->validate([
@@ -19,6 +28,7 @@ class GestionController extends Controller
             'tipo' => ['required', 'string', 'max:100'],
             'detalle' => ['required', 'string'],
             'proxima_gestion_at' => ['nullable', 'date'],
+            'linea_credito' => ['nullable', 'in:' . implode(',', self::LINEAS_CREDITO)],
             'efectivo' => ['nullable', 'in:SI,NO'],
             'monto_linea_credito' => ['nullable', 'numeric', 'min:0'],
         ]);
@@ -27,19 +37,35 @@ class GestionController extends Controller
             return back()->withErrors(['detalle' => 'Debe asociar la gestion a un registro.'])->withInput();
         }
 
+        if ($request->filled('base_asignada_id')) {
+            $base = BaseAsignada::with('estado')->findOrFail($request->input('base_asignada_id'));
+            $esCerrado = $base->estado?->slug === 'cerrado';
+            $esSupervisor = auth()->user()?->role === 'supervisor';
+            if ($esCerrado && !$esSupervisor) {
+                return back()->withErrors(['estado_id' => 'Este registro esta cerrado. Solo supervisor puede reabrirlo.'])->withInput();
+            }
+        }
+
+        $estadoPendienteId = Estado::where('slug', 'pendiente-aprobacion-supervisor')->value('id');
+        $estadoGestion = $data['estado_id'] ? Estado::find($data['estado_id']) : null;
+        $esCierre = $estadoGestion?->slug === 'cerrado';
+        if ($esCierre) {
+            $request->validate([
+                'efectivo' => ['required', 'in:SI,NO'],
+                'monto_linea_credito' => ['required', 'numeric', 'min:0'],
+            ]);
+            $data['estado_id'] = $estadoPendienteId;
+        }
+
         $gestion = Gestion::create($data);
 
         if ($gestion->base_asignada_id) {
-            $estadoGestion = $gestion->estado_id ? Estado::find($gestion->estado_id) : null;
-            $esCierre = $estadoGestion?->slug === 'cerrado';
             $update = ['estado_id' => $gestion->estado_id];
+            if ($request->filled('linea_credito')) {
+                $update['linea_credito'] = $request->input('linea_credito');
+            }
 
             if ($esCierre) {
-                $request->validate([
-                    'efectivo' => ['required', 'in:SI,NO'],
-                    'monto_linea_credito' => ['required', 'numeric', 'min:0'],
-                ]);
-                $update['estado_id'] = Estado::where('slug', 'pendiente-aprobacion-supervisor')->value('id');
                 $update['efectivo'] = $request->input('efectivo') === 'SI';
                 $update['monto_linea_credito'] = $request->input('monto_linea_credito');
                 $update['cierre_solicitado_at'] = now();

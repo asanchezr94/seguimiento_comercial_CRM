@@ -16,6 +16,12 @@
 @endif
 
 <h3>Lotes</h3>
+<form method="get" action="{{ route('base-asignada.index') }}">
+    <label>Buscar lote</label>
+    <input type="text" name="lote" value="{{ request('lote') }}" placeholder="Nombre del lote">
+    <button type="submit">Filtrar</button>
+    <a href="{{ route('base-asignada.index') }}">Limpiar</a>
+</form>
 <table>
     <thead>
         <tr>

@@ -4,6 +4,21 @@
 <h2>Lote: {{ $loteNombre }}</h2>
 <p>Total registros: {{ $bases->count() }}</p>
 
+<h3>Filtros</h3>
+<form method="get" action="{{ route('base-asignada.lote', ['loteNombre' => $loteNombre]) }}">
+    <label>Estado</label>
+    <select name="estado_id">
+        <option value="">Todos</option>
+        @foreach($estadosFiltro as $estado)
+            <option value="{{ $estado->id }}" @selected(request('estado_id') == $estado->id)>{{ $estado->nombre }}</option>
+        @endforeach
+    </select>
+    <label>Nombre o cedula</label>
+    <input type="text" name="q" value="{{ request('q') }}" placeholder="Buscar por nombre o cedula">
+    <button type="submit">Filtrar</button>
+    <a href="{{ route('base-asignada.lote', ['loteNombre' => $loteNombre]) }}">Limpiar</a>
+</form>
+
 @if(auth()->user()?->role === 'supervisor')
 <h3>Asignacion por lote</h3>
 <p>Selecciona 1 comercial para asignar todo, o varios para distribuir equitativamente (round-robin).</p>

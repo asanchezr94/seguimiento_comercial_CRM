@@ -47,6 +47,11 @@ class BaseAsignadaController extends Controller
             ->whereNotNull('lote_nombre')
             ->where('lote_nombre', '!=', '');
 
+        if (request()->filled('lote')) {
+            $lote = trim((string) request('lote'));
+            $query->where('lote_nombre', 'like', "%{$lote}%");
+        }
+
         if (!$this->isSupervisor()) {
             $query->where('asesor_id', auth()->id());
         }
@@ -69,19 +74,33 @@ class BaseAsignadaController extends Controller
         return view('base_asignadas.lotes', compact('lotes'));
     }
 
-    public function verLote(string $loteNombre)
+    public function verLote(Request $request, string $loteNombre)
     {
         $query = BaseAsignada::with(['asesor', 'estado'])->where('lote_nombre', $loteNombre)->orderBy('id');
         if (!$this->isSupervisor()) {
             $query->where('asesor_id', auth()->id());
         }
+
+        if ($request->filled('estado_id')) {
+            $query->where('estado_id', $request->integer('estado_id'));
+        }
+
+        if ($request->filled('q')) {
+            $q = trim((string) $request->input('q'));
+            $query->where(function ($sub) use ($q) {
+                $sub->where('nombre', 'like', "%{$q}%")
+                    ->orWhere('cedula', 'like', "%{$q}%");
+            });
+        }
+
         $bases = $query->get();
         if (!$this->isSupervisor() && $bases->isEmpty()) {
             abort(403);
         }
         $comerciales = User::where('role', 'comercial')->orderBy('name')->get();
+        $estadosFiltro = Estado::where('activo', true)->orderBy('nombre')->get();
 
-        return view('base_asignadas.lote', compact('bases', 'loteNombre', 'comerciales'));
+        return view('base_asignadas.lote', compact('bases', 'loteNombre', 'comerciales', 'estadosFiltro'));
     }
 
     /**
@@ -132,7 +151,59 @@ class BaseAsignadaController extends Controller
             abort(403);
         }
         $estados = $this->estadosGestionables();
-        return view('base_asignadas.show', compact('base', 'estados'));
+        $lineasCredito = self::LINEAS_CREDITO;
+        return view('base_asignadas.show', compact('base', 'estados', 'lineasCredito'));
+    }
+
+    public function cerradasComercial()
+    {
+        abort_unless(auth()->user()?->role === 'comercial', 403);
+        $cerradoId = Estado::where('slug', 'cerrado')->value('id');
+        $bases = BaseAsignada::with(['estado'])
+            ->where('asesor_id', auth()->id())
+            ->where('estado_id', $cerradoId)
+            ->latest()
+            ->get();
+
+        return view('base_asignadas.cerradas', compact('bases'));
+    }
+
+    public function comercialesSupervisor()
+    {
+        $this->forbidIfNotSupervisor();
+        $comerciales = User::where('role', 'comercial')
+            ->withCount('basesAsignadas')
+            ->orderBy('name')
+            ->get();
+
+        return view('base_asignadas.comerciales', compact('comerciales'));
+    }
+
+    public function gestionComercialSupervisor(Request $request, string $comercialId)
+    {
+        $this->forbidIfNotSupervisor();
+        $comercial = User::where('role', 'comercial')->findOrFail($comercialId);
+        $query = BaseAsignada::with(['estado'])
+            ->where('asesor_id', $comercial->id)
+            ->latest();
+
+        if ($request->filled('estado_id')) {
+            $query->where('estado_id', $request->integer('estado_id'));
+        }
+
+        if ($request->filled('q')) {
+            $q = trim((string) $request->input('q'));
+            $query->where(function ($sub) use ($q) {
+                $sub->where('nombre', 'like', "%{$q}%")
+                    ->orWhere('cedula', 'like', "%{$q}%")
+                    ->orWhere('lote_nombre', 'like', "%{$q}%");
+            });
+        }
+
+        $bases = $query->get();
+        $estados = Estado::where('activo', true)->orderBy('nombre')->get();
+
+        return view('base_asignadas.gestion_comercial', compact('comercial', 'bases', 'estados'));
     }
 
     public function gestionesPendientes()
@@ -152,11 +223,11 @@ class BaseAsignadaController extends Controller
         $this->forbidIfNotSupervisor();
         $base = BaseAsignada::findOrFail($id);
         $base->update([
-            'estado_id' => Estado::where('slug', 'efectiva')->value('id'),
+            'estado_id' => Estado::where('slug', 'cerrado')->value('id'),
             'motivo_devolucion' => null,
         ]);
 
-        return redirect()->route('base-asignada.pendientes')->with('ok', 'Gestion aprobada y marcada como efectiva.');
+        return redirect()->route('base-asignada.pendientes')->with('ok', 'Gestion aprobada y marcada como cerrada.');
     }
 
     public function devolverPendiente(Request $request, string $id)
@@ -176,6 +247,43 @@ class BaseAsignadaController extends Controller
         ]);
 
         return redirect()->route('base-asignada.pendientes')->with('ok', 'Gestion devuelta al comercial.');
+    }
+
+    public function cambiarEstadoSupervisor(Request $request, string $id)
+    {
+        $this->forbidIfNotSupervisor();
+        $data = $request->validate([
+            'estado_id' => ['required', 'exists:estados,id'],
+        ]);
+
+        $base = BaseAsignada::findOrFail($id);
+        $estado = Estado::findOrFail($data['estado_id']);
+        if (in_array($estado->slug, ['pendiente-aprobacion-supervisor'], true)) {
+            return back()->withErrors(['estado_id' => 'Ese estado no se puede asignar manualmente.']);
+        }
+
+        $base->update([
+            'estado_id' => $estado->id,
+            'cierre_solicitado_at' => null,
+            'cierre_solicitado_por' => null,
+            'motivo_devolucion' => null,
+        ]);
+
+        return redirect()->route('base-asignada.show', $base->id)->with('ok', 'Estado actualizado por supervisor.');
+    }
+
+    public function reabrirAContactado(string $id)
+    {
+        $this->forbidIfNotSupervisor();
+        $base = BaseAsignada::findOrFail($id);
+        $base->update([
+            'estado_id' => Estado::where('slug', 'contactado')->value('id'),
+            'cierre_solicitado_at' => null,
+            'cierre_solicitado_por' => null,
+            'motivo_devolucion' => null,
+        ]);
+
+        return redirect()->route('base-asignada.show', $base->id)->with('ok', 'Registro reabierto en estado Contactado.');
     }
 
     /**

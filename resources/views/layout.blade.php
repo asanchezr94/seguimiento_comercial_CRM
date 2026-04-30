@@ -22,8 +22,12 @@
         <nav>
             <a href="{{ route('base-asignada.index') }}">Base asignada</a>
             <a href="{{ route('clientes-potenciales.index') }}">Clientes potenciales</a>
+            @if(auth()->user()->role === 'comercial')
+                <a href="{{ route('base-asignada.cerradas') }}">Mis cerrados</a>
+            @endif
             @if(auth()->user()->role === 'supervisor')
                 <a href="{{ route('base-asignada.pendientes') }}">Gestiones pendientes por aprobar</a>
+                <a href="{{ route('supervisor.comerciales') }}">Comerciales y gestion</a>
             @endif
         </nav>
         <p>
