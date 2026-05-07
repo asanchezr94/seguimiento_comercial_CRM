@@ -87,6 +87,7 @@ class GestionController extends Controller
             if (!is_null($gestion->estado_id)) {
                 $update['estado_id'] = $gestion->estado_id;
             }
+            $update['ultima_gestion_at'] = now();
             if ($request->filled('linea_credito')) {
                 $update['linea_credito'] = $request->input('linea_credito');
             }

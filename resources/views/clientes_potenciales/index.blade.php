@@ -33,4 +33,5 @@
         @endforelse
     </tbody>
 </table>
+{{ $clientes->links() }}
 @endsection

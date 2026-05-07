@@ -20,7 +20,9 @@
     <h1>Seguimiento Comercial</h1>
     @auth
         <nav>
+            <a href="{{ route('dashboard') }}">Dashboard</a>
             <a href="{{ route('base-asignada.index') }}">Base asignada</a>
+            <a href="{{ route('base-asignada.historico-cedula') }}">Historico por cedula</a>
             <a href="{{ route('clientes-potenciales.index') }}">Clientes potenciales</a>
             @if(auth()->user()->role === 'comercial')
                 <a href="{{ route('base-asignada.cerradas') }}">Mis cerrados</a>

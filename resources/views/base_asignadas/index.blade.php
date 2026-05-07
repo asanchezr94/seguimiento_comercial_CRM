@@ -40,7 +40,7 @@
             <td>{{ $lote->total }}</td>
             <td>{{ number_format((float) $lote->porcentaje_gestion, 1) }}%</td>
             <td class="actions">
-                <a href="{{ route('base-asignada.lote', ['loteNombre' => $lote->lote_nombre]) }}">Ver lote</a>
+                <a href="{{ route('base-asignada.lote', ['loteRef' => $lote->lote_uid]) }}">Ver lote</a>
             </td>
         </tr>
         @empty
@@ -48,4 +48,5 @@
         @endforelse
     </tbody>
 </table>
+{{ $lotes->links() }}
 @endsection

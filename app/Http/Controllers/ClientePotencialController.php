@@ -31,7 +31,7 @@ class ClientePotencialController extends Controller
         if (!$this->isSupervisor()) {
             $query->where('asesor_id', auth()->id());
         }
-        $clientes = $query->get();
+        $clientes = $query->paginate(20)->withQueryString();
         return view('clientes_potenciales.index', compact('clientes'));
     }
 

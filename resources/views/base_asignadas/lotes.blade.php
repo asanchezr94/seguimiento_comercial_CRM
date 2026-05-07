@@ -15,11 +15,12 @@
             <tr>
                 <td>{{ $lote->lote_nombre }}</td>
                 <td>{{ $lote->total }}</td>
-                <td><a href="{{ route('base-asignada.lote', ['loteNombre' => $lote->lote_nombre]) }}">Ver lote</a></td>
+                <td><a href="{{ route('base-asignada.lote', ['loteRef' => $lote->lote_uid]) }}">Ver lote</a></td>
             </tr>
         @empty
             <tr><td colspan="3">No hay lotes creados.</td></tr>
         @endforelse
     </tbody>
 </table>
+{{ $lotes->links() }}
 @endsection

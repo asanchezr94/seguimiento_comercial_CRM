@@ -30,4 +30,5 @@
         @endforelse
     </tbody>
 </table>
+{{ $bases->links() }}
 @endsection

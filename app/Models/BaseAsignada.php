@@ -12,9 +12,12 @@ class BaseAsignada extends Model
 
     protected $fillable = [
         'supervisor_id',
+        'lote_uid',
         'lote_nombre',
         'asesor_id',
+        'asignado_at',
         'estado_id',
+        'persona_id',
         'nombre',
         'cedula',
         'linea_credito',
@@ -26,6 +29,12 @@ class BaseAsignada extends Model
         'empresa',
         'origen',
         'observaciones',
+        'ultima_gestion_at',
+    ];
+
+    protected $casts = [
+        'asignado_at' => 'datetime',
+        'ultima_gestion_at' => 'datetime',
     ];
 
     public function asesor(): BelongsTo
@@ -41,6 +50,11 @@ class BaseAsignada extends Model
     public function estado(): BelongsTo
     {
         return $this->belongsTo(Estado::class);
+    }
+
+    public function persona(): BelongsTo
+    {
+        return $this->belongsTo(Persona::class);
     }
 
     public function gestiones(): HasMany

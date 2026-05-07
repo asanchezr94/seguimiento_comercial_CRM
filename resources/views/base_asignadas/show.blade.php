@@ -45,8 +45,14 @@
 <form method="post" action="{{ route('gestiones.store') }}">
     @csrf
     <input type="hidden" name="base_asignada_id" value="{{ $base->id }}">
-    <label>Tipo</label>
-    <input name="tipo" value="{{ old('tipo', 'llamada') }}" required>
+    <label>Canal</label>
+    <select name="tipo" required>
+        @php($canalActual = old('tipo', 'llamada'))
+        <option value="visita" @selected($canalActual === 'visita')>Visita</option>
+        <option value="oficina" @selected($canalActual === 'oficina')>Oficina</option>
+        <option value="llamada" @selected($canalActual === 'llamada')>Llamada</option>
+        <option value="redes sociales" @selected($canalActual === 'redes sociales')>Redes sociales</option>
+    </select>
     <label>Estado resultante</label>
     <select name="estado_id" id="estado_id">
         <option value="">No cambiar</option>
@@ -81,7 +87,7 @@
 <table>
     <thead><tr><th>Fecha</th><th>Registrado por</th><th>Tipo</th><th>Estado</th><th>Detalle</th></tr></thead>
     <tbody>
-        @forelse($base->gestiones as $gestion)
+        @forelse($gestiones as $gestion)
             <tr>
                 <td>{{ $gestion->created_at }}</td>
                 <td>{{ $gestion->asesor?->name ?? 'N/A' }}</td>
@@ -94,6 +100,39 @@
         @endforelse
     </tbody>
 </table>
+{{ $gestiones->links() }}
+
+<h3>Historico por cedula</h3>
+@if($base->cedula)
+<table>
+    <thead>
+        <tr>
+            <th>Fecha carga</th>
+            <th>Lote</th>
+            <th>Estado</th>
+            <th>Comercial</th>
+            <th>Monto</th>
+            <th>Accion</th>
+        </tr>
+    </thead>
+    <tbody>
+        @forelse($historicoCedula as $h)
+            <tr>
+                <td>{{ $h->created_at?->format('d/m/Y H:i') }}</td>
+                <td>{{ $h->lote_nombre ?? 'SIN LOTE' }}</td>
+                <td>{{ $h->estado?->nombre ?? 'Sin estado' }}</td>
+                <td>{{ $h->asesor?->name ?? 'Sin asignar' }}</td>
+                <td>{{ is_null($h->monto_linea_credito) ? 'N/A' : '$' . number_format((float)$h->monto_linea_credito, 0, ',', '.') }}</td>
+                <td><a href="{{ route('base-asignada.show', $h->id) }}">Ver</a></td>
+            </tr>
+        @empty
+            <tr><td colspan="6">No hay registros anteriores para esta cedula.</td></tr>
+        @endforelse
+    </tbody>
+</table>
+@else
+<p>Este registro no tiene cedula, por eso no se puede consultar historico cruzado.</p>
+@endif
 <script>
     const estado = document.getElementById('estado_id');
     const efectivo = document.getElementById('efectivo');

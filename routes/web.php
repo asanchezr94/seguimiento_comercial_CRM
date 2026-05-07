@@ -14,6 +14,7 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::middleware('auth')->group(function () {
+    Route::get('dashboard', [BaseAsignadaController::class, 'dashboard'])->name('dashboard');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
     Route::post('base-asignada/importar', [BaseAsignadaController::class, 'importar'])->name('base-asignada.importar');
     Route::get('base-asignada-cerradas', [BaseAsignadaController::class, 'cerradasComercial'])->name('base-asignada.cerradas');
@@ -26,8 +27,9 @@ Route::middleware('auth')->group(function () {
     Route::post('base-asignada-pendientes/{id}/aprobar', [BaseAsignadaController::class, 'aprobarPendiente'])->name('base-asignada.pendientes.aprobar');
     Route::post('base-asignada-pendientes/{id}/devolver', [BaseAsignadaController::class, 'devolverPendiente'])->name('base-asignada.pendientes.devolver');
     Route::get('base-asignada-lotes', [BaseAsignadaController::class, 'lotes'])->name('base-asignada.lotes');
-    Route::get('base-asignada-lotes/{loteNombre}', [BaseAsignadaController::class, 'verLote'])->name('base-asignada.lote');
-    Route::post('base-asignada-lotes/{loteNombre}/asignar', [BaseAsignadaController::class, 'asignarLote'])->name('base-asignada.lote.asignar');
+    Route::get('base-asignada-lotes/{loteRef}', [BaseAsignadaController::class, 'verLote'])->name('base-asignada.lote');
+    Route::post('base-asignada-lotes/{loteRef}/asignar', [BaseAsignadaController::class, 'asignarLote'])->name('base-asignada.lote.asignar');
+    Route::get('historico-cedula', [BaseAsignadaController::class, 'historicoCedula'])->name('base-asignada.historico-cedula');
     Route::resource('base-asignada', BaseAsignadaController::class);
     Route::resource('clientes-potenciales', ClientePotencialController::class);
     Route::post('gestiones', [GestionController::class, 'store'])->name('gestiones.store');
