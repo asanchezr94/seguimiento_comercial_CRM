@@ -5,18 +5,19 @@
 <p>Resumen general de gestion comercial.</p>
 
 <h3>Indicadores mensuales</h3>
-<form method="get" action="{{ route('dashboard') }}">
-    <label>Mes</label>
-    <select name="mes">
-        @for($m = 1; $m <= 12; $m++)
-            <option value="{{ $m }}" @selected($mes === $m)>{{ str_pad((string) $m, 2, '0', STR_PAD_LEFT) }}</option>
-        @endfor
-    </select>
-    <label>Ano</label>
-    <input type="number" name="anio" value="{{ $anio }}" min="2000" max="2100">
-    <label>Filtro lote (opcional)</label>
-    <input type="text" name="lote" value="{{ request('lote') }}" placeholder="Nombre del lote">
-    <button type="submit">Aplicar</button>
+<form method="get" action="{{ route('dashboard') }}" id="filtro-periodo" class="inline-filters">
+    <div class="field">
+        <label>Mes</label>
+        <select name="mes" onchange="document.getElementById('filtro-periodo').submit()">
+            @for($m = 1; $m <= 12; $m++)
+                <option value="{{ $m }}" @selected($mes === $m)>{{ str_pad((string) $m, 2, '0', STR_PAD_LEFT) }}</option>
+            @endfor
+        </select>
+    </div>
+    <div class="field">
+        <label>Ano</label>
+        <input type="number" name="anio" value="{{ $anio }}" min="2000" max="2100" onchange="document.getElementById('filtro-periodo').submit()">
+    </div>
     <a href="{{ route('dashboard') }}">Limpiar</a>
 </form>
 <p>Periodo seleccionado: <strong>{{ $inicioMes->locale('es')->translatedFormat('F Y') }}</strong></p>
@@ -169,46 +170,6 @@
         </tr>
     </tbody>
 </table>
-
-<h3>Gestion por lote</h3>
-<form method="get" action="{{ route('dashboard') }}">
-    <label>Buscar lote</label>
-    <input type="text" name="lote" value="{{ request('lote') }}" placeholder="Nombre del lote">
-    <button type="submit">Filtrar</button>
-    <a href="{{ route('dashboard') }}">Limpiar</a>
-</form>
-<table>
-    <thead>
-        <tr>
-            <th>Lote</th>
-            <th>Total registros</th>
-            <th>Gestionadas</th>
-            <th>% gestion</th>
-            <th>Pendientes aprobacion</th>
-            <th>Cerradas</th>
-            <th>Devueltas</th>
-            <th>Monto cerrado</th>
-        </tr>
-    </thead>
-    <tbody>
-        @forelse($lotesDetalle as $lote)
-            @php($porcLote = (int)$lote->total > 0 ? round(((int)$lote->gestionados / (int)$lote->total) * 100, 1) : 0)
-            <tr>
-                <td>{{ $lote->lote_nombre }}</td>
-                <td>{{ number_format((int) $lote->total, 0, ',', '.') }}</td>
-                <td>{{ number_format((int) $lote->gestionados, 0, ',', '.') }}</td>
-                <td>{{ number_format((float) $porcLote, 1) }}%</td>
-                <td>{{ number_format((int) $lote->pendientes_aprobacion, 0, ',', '.') }}</td>
-                <td>{{ number_format((int) $lote->cerrados, 0, ',', '.') }}</td>
-                <td>{{ number_format((int) $lote->devueltas, 0, ',', '.') }}</td>
-                <td>${{ number_format((float) $lote->monto_cerrado, 0, ',', '.') }}</td>
-            </tr>
-        @empty
-            <tr><td colspan="8">Sin lotes para este filtro.</td></tr>
-        @endforelse
-    </tbody>
-</table>
-{{ $lotesDetalle->links() }}
 
 <h3>Embudo por estado</h3>
 <table>

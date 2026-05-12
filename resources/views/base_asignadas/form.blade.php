@@ -25,7 +25,22 @@
 <input name="empresa" value="{{ old('empresa', $base->empresa ?? '') }}">
 
 <label>Origen</label>
-<input name="origen" value="{{ old('origen', $base->origen ?? '') }}">
+@if(!empty($base))
+    <select disabled>
+        <option value="">Seleccione</option>
+        @foreach(($origenesBase ?? []) as $origen)
+            <option value="{{ $origen }}" @selected(old('origen', $base->origen ?? null) === $origen)>{{ ucfirst($origen) }}</option>
+        @endforeach
+    </select>
+    <small>El origen se define al cargar la base y no se puede cambiar.</small>
+@else
+    <select name="origen">
+        <option value="">Seleccione</option>
+        @foreach(($origenesBase ?? []) as $origen)
+            <option value="{{ $origen }}" @selected(old('origen', $base->origen ?? null) === $origen)>{{ ucfirst($origen) }}</option>
+        @endforeach
+    </select>
+@endif
 
 <label>Supervisor</label>
 <select name="supervisor_id" required>

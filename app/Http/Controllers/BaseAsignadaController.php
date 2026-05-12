@@ -22,6 +22,14 @@ class BaseAsignadaController extends Controller
         'CREDITO PRIMA',
         'ADELANTO DE SALARIO',
     ];
+    private const ORIGENES_BASE = [
+        'llamada',
+        'visita',
+        'oficina',
+        'redes sociales',
+        'base interna',
+        'referidos',
+    ];
 
     private function isSupervisor(): bool
     {
@@ -94,6 +102,14 @@ class BaseAsignadaController extends Controller
             ->selectRaw('count(*) as total')
             ->selectRaw('count(distinct case when exists (select 1 from gestions where gestions.base_asignada_id = base_asignadas.id) then base_asignadas.id end) as gestionados')
             ->selectRaw('min(created_at) as fecha_carga')
+            ->selectRaw('min(origen) as origen_base')
+            ->selectRaw('max(ultima_gestion_at) as ultima_modificacion')
+            ->selectRaw("(select GROUP_CONCAT(distinct users.name order by users.name separator ', ')
+                from base_asignadas ba2
+                left join users on users.id = ba2.asesor_id
+                where ba2.lote_uid = base_asignadas.lote_uid
+                  and ba2.asesor_id is not null
+            ) as comerciales_asignados")
             ->whereNotNull('lote_uid')
             ->where('lote_uid', '!=', '');
 
@@ -131,10 +147,6 @@ class BaseAsignadaController extends Controller
         $basePorLote = BaseAsignada::query();
         if (!$esSupervisor) {
             $basePorLote->where('asesor_id', $user?->id);
-        }
-        if ($request->filled('lote')) {
-            $loteFiltro = trim((string) $request->input('lote'));
-            $basePorLote->where('lote_nombre', 'like', "%{$loteFiltro}%");
         }
 
         $mes = max(1, min(12, (int) $request->input('mes', now()->month)));
@@ -209,10 +221,6 @@ class BaseAsignadaController extends Controller
             ->when(!$esSupervisor, function ($q) use ($user) {
                 $q->where('base_asignadas.asesor_id', $user?->id);
             })
-            ->when($request->filled('lote'), function ($q) use ($request) {
-                $loteFiltro = trim((string) $request->input('lote'));
-                $q->where('base_asignadas.lote_nombre', 'like', "%{$loteFiltro}%");
-            })
             ->selectRaw("LOWER(TRIM(gestions.tipo)) as canal")
             ->selectRaw('count(*) as total_gestiones')
             ->selectRaw('count(distinct gestions.base_asignada_id) as registros_unicos')
@@ -229,10 +237,6 @@ class BaseAsignadaController extends Controller
             ->where('gestions.estado_id', $pendienteId)
             ->when(!$esSupervisor, function ($q) use ($user) {
                 $q->where('base_asignadas.asesor_id', $user?->id);
-            })
-            ->when($request->filled('lote'), function ($q) use ($request) {
-                $loteFiltro = trim((string) $request->input('lote'));
-                $q->where('base_asignadas.lote_nombre', 'like', "%{$loteFiltro}%");
             })
             ->selectRaw("LOWER(TRIM(gestions.tipo)) as canal")
             ->selectRaw('count(*) as solicitudes_cierre')
@@ -254,25 +258,8 @@ class BaseAsignadaController extends Controller
             ->orderByDesc('total')
             ->get();
 
-        $lotesDetalle = (clone $basePorLote)
-            ->select('lote_uid')
-            ->selectRaw("COALESCE(lote_nombre, 'SIN LOTE') as lote_nombre")
-            ->selectRaw('count(*) as total')
-            ->selectRaw('count(distinct case when exists (select 1 from gestions where gestions.base_asignada_id = base_asignadas.id) then base_asignadas.id end) as gestionados')
-            ->selectRaw('sum(case when estado_id = ? then 1 else 0 end) as pendientes_aprobacion', [$pendienteId ?? 0])
-            ->selectRaw('sum(case when estado_id = ? then 1 else 0 end) as cerrados', [$cerradoId ?? 0])
-            ->selectRaw('sum(case when estado_id = ? then 1 else 0 end) as devueltas', [$devueltaId ?? 0])
-            ->selectRaw('sum(case when estado_id = ? then COALESCE(monto_linea_credito, 0) else 0 end) as monto_cerrado', [$cerradoId ?? 0])
-            ->whereNotNull('lote_uid')
-            ->where('lote_uid', '!=', '')
-            ->groupBy('lote_uid', 'lote_nombre')
-            ->orderByDesc('total')
-            ->paginate(15)
-            ->withQueryString();
-
         $comercialesResumen = collect();
         if ($esSupervisor) {
-            $loteFiltro = trim((string) $request->input('lote', ''));
             $comercialesResumen = User::where('role', 'comercial')
                 ->withCount([
                     'basesAsignadas as total_registros' => function ($q) use ($inicioMes, $finMes) {
@@ -303,13 +290,10 @@ class BaseAsignadaController extends Controller
                 ])
                 ->orderBy('name')
                 ->get()
-                ->map(function ($comercial) use ($inicioMes, $finMes, $cerradoId, $loteFiltro) {
+                ->map(function ($comercial) use ($inicioMes, $finMes, $cerradoId) {
                     $baseMesAsesor = BaseAsignada::query()
                         ->where('asesor_id', $comercial->id)
                         ->whereBetween('created_at', [$inicioMes, $finMes]);
-                    if ($loteFiltro !== '') {
-                        $baseMesAsesor->where('lote_nombre', 'like', "%{$loteFiltro}%");
-                    }
                     $asignadosMes = (clone $baseMesAsesor)->count();
 
                     $cierresBaseMes = BaseAsignada::query()
@@ -325,10 +309,6 @@ class BaseAsignadaController extends Controller
                                         ->whereBetween('gestions.created_at', [$inicioMes, $finMes]);
                                 });
                         });
-                    if ($loteFiltro !== '') {
-                        $cierresBaseMes->where('lote_nombre', 'like', "%{$loteFiltro}%");
-                    }
-
                     $cierresMes = (clone $cierresBaseMes)->count();
                     $montoColocadoMes = (clone $cierresBaseMes)->sum('monto_linea_credito');
                     $porcentajeCierreVsAsignados = $asignadosMes > 0 ? round(($cierresMes / $asignadosMes) * 100, 1) : 0;
@@ -352,7 +332,6 @@ class BaseAsignadaController extends Controller
             'porcentajeGestion',
             'porcentajeCierre',
             'estadosResumen',
-            'lotesDetalle',
             'comercialesResumen',
             
             'mes',
@@ -433,7 +412,8 @@ class BaseAsignadaController extends Controller
         $supervisores = User::where('role', 'supervisor')->orderBy('name')->get();
         $comerciales = User::where('role', 'comercial')->orderBy('name')->get();
         $lineasCredito = self::LINEAS_CREDITO;
-        return view('base_asignadas.create', compact('estados', 'supervisores', 'comerciales', 'lineasCredito'));
+        $origenesBase = self::ORIGENES_BASE;
+        return view('base_asignadas.create', compact('estados', 'supervisores', 'comerciales', 'lineasCredito', 'origenesBase'));
     }
 
     /**
@@ -450,7 +430,7 @@ class BaseAsignadaController extends Controller
             'telefono' => ['nullable', 'string', 'max:50'],
             'email' => ['nullable', 'email', 'max:255'],
             'empresa' => ['nullable', 'string', 'max:255'],
-            'origen' => ['nullable', 'string', 'max:255'],
+            'origen' => ['nullable', 'in:' . implode(',', self::ORIGENES_BASE)],
             'estado_id' => ['nullable', 'exists:estados,id'],
             'supervisor_id' => ['required', 'exists:users,id'],
             'asesor_id' => ['required', 'exists:users,id'],
@@ -501,13 +481,17 @@ class BaseAsignadaController extends Controller
 
     public function historicoCedula(Request $request)
     {
-        $cedula = trim((string) $request->input('cedula', ''));
+        $criterio = trim((string) $request->input('q', ''));
         $registros = null;
         $gestiones = null;
 
-        if ($cedula !== '') {
+        if ($criterio !== '') {
             $queryBase = BaseAsignada::with(['estado', 'asesor'])
-                ->where('cedula', $cedula);
+                ->where(function ($q) use ($criterio) {
+                    $q->where('cedula', 'like', "%{$criterio}%")
+                        ->orWhere('nombre', 'like', "%{$criterio}%")
+                        ->orWhere('telefono', 'like', "%{$criterio}%");
+                });
             if (!$this->isSupervisor()) {
                 $queryBase->where('asesor_id', auth()->id());
             }
@@ -525,7 +509,7 @@ class BaseAsignadaController extends Controller
                 ->withQueryString();
         }
 
-        return view('base_asignadas.historico_cedula', compact('cedula', 'registros', 'gestiones'));
+        return view('base_asignadas.historico_cedula', compact('criterio', 'registros', 'gestiones'));
     }
 
     public function cerradasComercial()
@@ -572,27 +556,58 @@ class BaseAsignadaController extends Controller
     {
         $this->forbidIfNotSupervisor();
         $comercial = User::where('role', 'comercial')->findOrFail($comercialId);
-        $query = BaseAsignada::with(['estado'])
+        $query = BaseAsignada::query()
             ->where('asesor_id', $comercial->id)
-            ->latest();
+            ->whereNotNull('lote_uid')
+            ->where('lote_uid', '!=', '')
+            ->select('lote_uid', 'lote_nombre')
+            ->selectRaw('count(*) as total_registros')
+            ->selectRaw('count(distinct case when exists (select 1 from gestions where gestions.base_asignada_id = base_asignadas.id) then base_asignadas.id end) as gestionados')
+            ->selectRaw('min(created_at) as fecha_carga')
+            ->selectRaw('max(ultima_gestion_at) as ultima_modificacion')
+            ->groupBy('lote_uid', 'lote_nombre')
+            ->orderByDesc('fecha_carga');
+
+        if ($request->filled('q')) {
+            $q = trim((string) $request->input('q'));
+            $query->where('lote_nombre', 'like', "%{$q}%");
+        }
+
+        $lotes = $query->paginate(20)->withQueryString();
+
+        return view('base_asignadas.gestion_comercial', compact('comercial', 'lotes'));
+    }
+
+    public function gestionComercialLoteSupervisor(Request $request, string $comercialId, string $loteRef)
+    {
+        $this->forbidIfNotSupervisor();
+        $comercial = User::where('role', 'comercial')->findOrFail($comercialId);
+
+        $baseQuery = BaseAsignada::where('asesor_id', $comercial->id)->where('lote_uid', $loteRef);
+        if (!(clone $baseQuery)->exists()) {
+            $baseQuery = BaseAsignada::where('asesor_id', $comercial->id)->where('lote_nombre', $loteRef);
+        }
+
+        $query = BaseAsignada::with(['estado'])
+            ->whereIn('id', (clone $baseQuery)->select('id'))
+            ->orderBy('id');
 
         if ($request->filled('estado_id')) {
             $query->where('estado_id', $request->integer('estado_id'));
         }
-
         if ($request->filled('q')) {
             $q = trim((string) $request->input('q'));
             $query->where(function ($sub) use ($q) {
                 $sub->where('nombre', 'like', "%{$q}%")
-                    ->orWhere('cedula', 'like', "%{$q}%")
-                    ->orWhere('lote_nombre', 'like', "%{$q}%");
+                    ->orWhere('cedula', 'like', "%{$q}%");
             });
         }
 
         $bases = $query->paginate(20)->withQueryString();
         $estados = Estado::where('activo', true)->orderBy('nombre')->get();
+        $loteNombre = $bases->first()?->lote_nombre ?? $loteRef;
 
-        return view('base_asignadas.gestion_comercial', compact('comercial', 'bases', 'estados'));
+        return view('base_asignadas.gestion_comercial_lote', compact('comercial', 'bases', 'estados', 'loteNombre', 'loteRef'));
     }
 
     public function gestionesPendientes()
@@ -736,7 +751,8 @@ class BaseAsignadaController extends Controller
         $supervisores = User::where('role', 'supervisor')->orderBy('name')->get();
         $comerciales = User::where('role', 'comercial')->orderBy('name')->get();
         $lineasCredito = self::LINEAS_CREDITO;
-        return view('base_asignadas.edit', compact('base', 'estados', 'supervisores', 'comerciales', 'lineasCredito'));
+        $origenesBase = self::ORIGENES_BASE;
+        return view('base_asignadas.edit', compact('base', 'estados', 'supervisores', 'comerciales', 'lineasCredito', 'origenesBase'));
     }
 
     /**
@@ -754,7 +770,7 @@ class BaseAsignadaController extends Controller
             'telefono' => ['nullable', 'string', 'max:50'],
             'email' => ['nullable', 'email', 'max:255'],
             'empresa' => ['nullable', 'string', 'max:255'],
-            'origen' => ['nullable', 'string', 'max:255'],
+            'origen' => ['nullable', 'in:' . implode(',', self::ORIGENES_BASE)],
             'estado_id' => ['nullable', 'exists:estados,id'],
             'supervisor_id' => ['required', 'exists:users,id'],
             'asesor_id' => ['required', 'exists:users,id'],
@@ -774,6 +790,8 @@ class BaseAsignadaController extends Controller
             $data['telefono'] ?? null,
             $data['email'] ?? null
         );
+        // El origen se define al cargar/crear la base y no se permite cambiar luego.
+        unset($data['origen']);
         if (array_key_exists('asesor_id', $data)) {
             if ($data['asesor_id'] && $data['asesor_id'] !== $base->asesor_id) {
                 $data['asignado_at'] = now();
@@ -801,6 +819,8 @@ class BaseAsignadaController extends Controller
 
         $request->validate([
             'archivo_csv' => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+            'lote_nombre' => ['required', 'string', 'max:255'],
+            'origen' => ['required', 'in:' . implode(',', self::ORIGENES_BASE)],
         ]);
 
         $filePath = $request->file('archivo_csv')->getRealPath();
@@ -819,7 +839,7 @@ class BaseAsignadaController extends Controller
         rewind($file);
 
         $header = fgetcsv($file, 0, $delimiter);
-        if (!$header || count($header) < 10) {
+        if (!$header || count($header) < 2) {
             fclose($file);
             return back()->withErrors(['archivo_csv' => 'Encabezado invalido.']);
         }
@@ -828,34 +848,56 @@ class BaseAsignadaController extends Controller
             $clean = preg_replace('/^\xEF\xBB\xBF/', '', (string) $h);
             return Str::lower(trim($clean));
         }, $header);
-        $esperadoConLinea = ['lote_nombre', 'nombre', 'cedula', 'linea_credito', 'telefono', 'email', 'empresa', 'origen', 'observaciones', 'estado_slug', 'comercial_email'];
-        $esperadoSinLinea = ['lote_nombre', 'nombre', 'cedula', 'telefono', 'email', 'empresa', 'origen', 'observaciones', 'estado_slug', 'comercial_email'];
-        $usaLineaCredito = $header === $esperadoConLinea;
-        $sinLineaCredito = $header === $esperadoSinLinea;
-        if (!$usaLineaCredito && !$sinLineaCredito) {
+
+        $permitidas = ['nombre', 'telefono', 'cedula', 'linea_credito', 'email', 'empresa', 'observaciones', 'estado_slug', 'comercial_email'];
+        $requeridas = ['nombre', 'telefono'];
+        $headerMap = array_flip($header);
+        foreach ($requeridas as $req) {
+            if (!array_key_exists($req, $headerMap)) {
+                fclose($file);
+                return back()->withErrors(['archivo_csv' => "Falta la columna obligatoria: {$req}."]);
+            }
+        }
+        foreach ($header as $columna) {
+            if (!in_array($columna, $permitidas, true)) {
+                fclose($file);
+                return back()->withErrors(['archivo_csv' => "Columna no permitida en CSV: {$columna}."]);
+            }
+        }
+
+        $loteNombreImport = trim((string) $request->input('lote_nombre'));
+        $origenImport = trim((string) $request->input('origen'));
+        if ($loteNombreImport === '') {
             fclose($file);
-            return back()->withErrors(['archivo_csv' => 'El encabezado no coincide con el formato esperado.']);
+            return back()->withErrors(['lote_nombre' => 'Debes indicar el nombre del lote/base.']);
         }
 
         $creados = 0;
         $omitidos = 0;
         $importSuffix = now()->format('YmdHis') . '-' . Str::lower(Str::random(5));
-        $loteUidMap = [];
+        $loteUid = $this->buildLoteUid($loteNombreImport, $importSuffix);
 
         while (($row = fgetcsv($file, 0, $delimiter)) !== false) {
-            if (count($row) < 10) {
-                $omitidos++;
-                continue;
-            }
-
             $row = array_map('trim', $row);
-            if ($usaLineaCredito) {
-                [$loteNombre, $nombre, $cedula, $lineaCredito, $telefono, $email, $empresa, $origen, $observaciones, $estadoSlug, $comercialEmail] = $row;
-            } else {
-                [$loteNombre, $nombre, $cedula, $telefono, $email, $empresa, $origen, $observaciones, $estadoSlug, $comercialEmail] = $row;
-                $lineaCredito = '';
-            }
-            if ($nombre === '') {
+            $get = function (string $key) use ($headerMap, $row): string {
+                $idx = $headerMap[$key] ?? null;
+                if ($idx === null) {
+                    return '';
+                }
+                return trim((string) ($row[$idx] ?? ''));
+            };
+
+            $nombre = $get('nombre');
+            $telefono = $get('telefono');
+            $cedula = $get('cedula');
+            $lineaCredito = $get('linea_credito');
+            $email = $get('email');
+            $empresa = $get('empresa');
+            $observaciones = $get('observaciones');
+            $estadoSlug = $get('estado_slug');
+            $comercialEmail = $get('comercial_email');
+
+            if ($nombre === '' || $telefono === '') {
                 $omitidos++;
                 continue;
             }
@@ -880,18 +922,10 @@ class BaseAsignadaController extends Controller
                 continue;
             }
 
-            $loteUid = null;
-            if ($loteNombre !== '') {
-                if (!isset($loteUidMap[$loteNombre])) {
-                    $loteUidMap[$loteNombre] = $this->buildLoteUid($loteNombre, $importSuffix);
-                }
-                $loteUid = $loteUidMap[$loteNombre];
-            }
-
             BaseAsignada::create([
                 'supervisor_id' => auth()->id(),
                 'lote_uid' => $loteUid,
-                'lote_nombre' => $loteNombre ?: null,
+                'lote_nombre' => $loteNombreImport,
                 'asesor_id' => $comercial?->id,
                 'asignado_at' => $comercial?->id ? now() : null,
                 'estado_id' => $estadoId,
@@ -902,7 +936,7 @@ class BaseAsignadaController extends Controller
                 'telefono' => $telefono ?: null,
                 'email' => $email ?: null,
                 'empresa' => $empresa ?: null,
-                'origen' => $origen ?: null,
+                'origen' => $origenImport,
                 'observaciones' => $observaciones ?: null,
             ]);
 

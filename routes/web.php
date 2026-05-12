@@ -4,6 +4,7 @@ use App\Http\Controllers\BaseAsignadaController;
 use App\Http\Controllers\ClientePotencialController;
 use App\Http\Controllers\GestionController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\NotificationController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('base-asignada.index'));
@@ -23,6 +24,7 @@ Route::middleware('auth')->group(function () {
     Route::post('base-asignada/{id}/reabrir-contactado', [BaseAsignadaController::class, 'reabrirAContactado'])->name('base-asignada.reabrir-contactado');
     Route::get('supervisor/comerciales', [BaseAsignadaController::class, 'comercialesSupervisor'])->name('supervisor.comerciales');
     Route::get('supervisor/comerciales/{comercialId}/gestion', [BaseAsignadaController::class, 'gestionComercialSupervisor'])->name('supervisor.comerciales.gestion');
+    Route::get('supervisor/comerciales/{comercialId}/gestion/{loteRef}', [BaseAsignadaController::class, 'gestionComercialLoteSupervisor'])->name('supervisor.comerciales.gestion.lote');
     Route::get('base-asignada-pendientes', [BaseAsignadaController::class, 'gestionesPendientes'])->name('base-asignada.pendientes');
     Route::post('base-asignada-pendientes/{id}/aprobar', [BaseAsignadaController::class, 'aprobarPendiente'])->name('base-asignada.pendientes.aprobar');
     Route::post('base-asignada-pendientes/{id}/devolver', [BaseAsignadaController::class, 'devolverPendiente'])->name('base-asignada.pendientes.devolver');
@@ -30,6 +32,8 @@ Route::middleware('auth')->group(function () {
     Route::get('base-asignada-lotes/{loteRef}', [BaseAsignadaController::class, 'verLote'])->name('base-asignada.lote');
     Route::post('base-asignada-lotes/{loteRef}/asignar', [BaseAsignadaController::class, 'asignarLote'])->name('base-asignada.lote.asignar');
     Route::get('historico-cedula', [BaseAsignadaController::class, 'historicoCedula'])->name('base-asignada.historico-cedula');
+    Route::get('notificaciones', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::post('notificaciones/{id}/leer', [NotificationController::class, 'markRead'])->name('notifications.read');
     Route::resource('base-asignada', BaseAsignadaController::class);
     Route::resource('clientes-potenciales', ClientePotencialController::class);
     Route::post('gestiones', [GestionController::class, 'store'])->name('gestiones.store');

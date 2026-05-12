@@ -21,6 +21,7 @@ class BaseAsignada extends Model
         'nombre',
         'cedula',
         'linea_credito',
+        'monto_solicitado',
         'efectivo',
         'monto_linea_credito',
         'motivo_devolucion',

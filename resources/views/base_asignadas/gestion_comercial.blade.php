@@ -1,18 +1,11 @@
 @extends('layout')
 
 @section('content')
-<h2>Gestion de {{ $comercial->name }}</h2>
+<h2>Lotes asignados a {{ $comercial->name }}</h2>
 
 <form method="get" action="{{ route('supervisor.comerciales.gestion', $comercial->id) }}">
-    <label>Estado</label>
-    <select name="estado_id">
-        <option value="">Todos los estados</option>
-        @foreach($estados as $estado)
-            <option value="{{ $estado->id }}" @selected(request('estado_id') == $estado->id)>{{ $estado->nombre }}</option>
-        @endforeach
-    </select>
-    <label>Buscar (lote, nombre o cedula)</label>
-    <input type="text" name="q" value="{{ request('q') }}" placeholder="Buscar...">
+    <label>Buscar lote</label>
+    <input type="text" name="q" value="{{ request('q') }}" placeholder="Nombre del lote">
     <button type="submit">Filtrar</button>
     <a href="{{ route('supervisor.comerciales.gestion', $comercial->id) }}">Limpiar</a>
 </form>
@@ -21,29 +14,30 @@
     <thead>
         <tr>
             <th>Lote</th>
-            <th>Cliente</th>
-            <th>Cedula</th>
-            <th>Estado</th>
-            <th>Linea credito</th>
-            <th>Monto</th>
+            <th>Fecha carga</th>
+            <th>Total registros</th>
+            <th>Gestionados</th>
+            <th>% gestion</th>
+            <th>Ultima gestion</th>
             <th>Accion</th>
         </tr>
     </thead>
     <tbody>
-        @forelse($bases as $base)
+        @forelse($lotes as $lote)
+            @php($porc = (int)$lote->total_registros > 0 ? round(((int)$lote->gestionados / (int)$lote->total_registros) * 100, 1) : 0)
             <tr>
-                <td>{{ $base->lote_nombre }}</td>
-                <td>{{ $base->nombre }}</td>
-                <td>{{ $base->cedula ?? 'N/A' }}</td>
-                <td>{{ $base->estado?->nombre ?? 'N/A' }}</td>
-                <td>{{ $base->linea_credito ?? 'N/A' }}</td>
-                <td>{{ is_null($base->monto_linea_credito) ? 'N/A' : number_format((float)$base->monto_linea_credito, 0, ',', '.') }}</td>
-                <td><a href="{{ route('base-asignada.show', $base->id) }}">Gestionar</a></td>
+                <td>{{ $lote->lote_nombre }}</td>
+                <td>{{ $lote->fecha_carga ? \Illuminate\Support\Carbon::parse($lote->fecha_carga)->format('d/m/Y H:i') : 'N/A' }}</td>
+                <td>{{ number_format((int)$lote->total_registros, 0, ',', '.') }}</td>
+                <td>{{ number_format((int)$lote->gestionados, 0, ',', '.') }}</td>
+                <td>{{ number_format((float)$porc, 1) }}%</td>
+                <td>{{ $lote->ultima_modificacion ? \Illuminate\Support\Carbon::parse($lote->ultima_modificacion)->format('d/m/Y H:i') : 'N/A' }}</td>
+                <td><a href="{{ route('supervisor.comerciales.gestion.lote', ['comercialId' => $comercial->id, 'loteRef' => $lote->lote_uid]) }}">Ver lote</a></td>
             </tr>
         @empty
-            <tr><td colspan="7">Sin registros para este filtro.</td></tr>
+            <tr><td colspan="7">Sin lotes para este comercial.</td></tr>
         @endforelse
     </tbody>
 </table>
-{{ $bases->links() }}
+{{ $lotes->links() }}
 @endsection

@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AppNotification;
 use App\Models\BaseAsignada;
 use App\Models\ClientePotencial;
 use App\Models\Estado;
 use App\Models\Gestion;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class GestionController extends Controller
@@ -34,8 +36,9 @@ class GestionController extends Controller
             'detalle' => ['required', 'string'],
             'proxima_gestion_at' => ['nullable', 'date'],
             'linea_credito' => ['nullable', 'in:' . implode(',', self::LINEAS_CREDITO)],
+            'monto_solicitado' => ['nullable', 'regex:/^[0-9]+$/'],
             'efectivo' => ['nullable', 'in:SI,NO'],
-            'monto_linea_credito' => ['nullable', 'numeric', 'min:0'],
+            'monto_linea_credito' => ['nullable', 'regex:/^[0-9]+$/'],
         ]);
 
         if (!$request->filled('base_asignada_id') && !$request->filled('cliente_potencial_id')) {
@@ -66,7 +69,7 @@ class GestionController extends Controller
         if ($esCierre) {
             $request->validate([
                 'efectivo' => ['required', 'in:SI,NO'],
-                'monto_linea_credito' => ['required', 'numeric', 'min:0'],
+                'monto_linea_credito' => [($request->input('efectivo') === 'SI' ? 'required' : 'nullable'), 'regex:/^[0-9]*$/'],
             ]);
             $data['estado_id'] = $estadoPendienteId;
         }
@@ -76,6 +79,16 @@ class GestionController extends Controller
                 $data['estado_id'] = $base->estado_id;
             } elseif ($cliente) {
                 $data['estado_id'] = $cliente->estado_id;
+            }
+        }
+
+        if ($base && $request->filled('monto_solicitado')) {
+            $nuevoMontoSolicitado = (int) $request->input('monto_solicitado');
+            $montoActual = is_null($base->monto_solicitado) ? null : (int) $base->monto_solicitado;
+            if ($montoActual !== $nuevoMontoSolicitado) {
+                $actualTxt = is_null($montoActual) ? 'N/A' : number_format($montoActual, 0, ',', '.');
+                $nuevoTxt = number_format($nuevoMontoSolicitado, 0, ',', '.');
+                $data['detalle'] = trim($data['detalle']) . " | Monto solicitado: {$actualTxt} -> {$nuevoTxt}";
             }
         }
 
@@ -91,16 +104,52 @@ class GestionController extends Controller
             if ($request->filled('linea_credito')) {
                 $update['linea_credito'] = $request->input('linea_credito');
             }
+            if ($request->filled('monto_solicitado')) {
+                $update['monto_solicitado'] = (int) $request->input('monto_solicitado');
+            }
 
             if ($esCierre) {
                 $update['efectivo'] = $request->input('efectivo') === 'SI';
-                $update['monto_linea_credito'] = $request->input('monto_linea_credito');
+                $update['monto_linea_credito'] = $request->input('efectivo') === 'SI'
+                    ? (int) $request->input('monto_linea_credito')
+                    : null;
                 $update['cierre_solicitado_at'] = now();
                 $update['cierre_solicitado_por'] = auth()->id();
                 $update['motivo_devolucion'] = null;
             }
 
             BaseAsignada::whereKey($gestion->base_asignada_id)->update($update);
+
+            if (!empty($data['proxima_gestion_at']) && $base?->asesor_id) {
+                $fechaProxima = \Carbon\Carbon::parse($data['proxima_gestion_at']);
+                if ($fechaProxima->isSameDay(now())) {
+                    AppNotification::create([
+                        'user_id' => $base->asesor_id,
+                        'title' => 'Gestion programada para hoy',
+                        'message' => "Tienes una proxima gestion hoy para {$base->nombre} ({$base->cedula}).",
+                        'type' => 'proxima_gestion',
+                        'related_id' => $base->id,
+                        'related_type' => BaseAsignada::class,
+                        'event_at' => $fechaProxima,
+                    ]);
+                }
+            }
+
+            if ($esCierre) {
+                $supervisores = User::where('role', 'supervisor')->pluck('id');
+                foreach ($supervisores as $supervisorId) {
+                    AppNotification::create([
+                        'user_id' => $supervisorId,
+                        'title' => 'Solicitud de cierre pendiente',
+                        'message' => "Se solicito cierre para {$base?->nombre} ({$base?->cedula}) por {$user?->name}.",
+                        'type' => 'cierre_pendiente',
+                        'related_id' => $base?->id,
+                        'related_type' => BaseAsignada::class,
+                        'event_at' => now(),
+                    ]);
+                }
+            }
+
             $msg = $esCierre
                 ? 'Gestion enviada a aprobacion del supervisor.'
                 : 'Gestion registrada.';
