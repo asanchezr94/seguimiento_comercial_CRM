@@ -29,6 +29,11 @@
             <th></th><td></td>
         </tr>
         <tr>
+            <th>Tiempo invertido total</th>
+            <td>{{ number_format((int)$tiempoInvertidoRegistroMin, 0, ',', '.') }} min</td>
+            <th></th><td></td>
+        </tr>
+        <tr>
             <th>Observaciones</th><td colspan="3">{{ $base->observaciones ?: 'N/A' }}</td>
         </tr>
     </tbody>
@@ -38,30 +43,17 @@
 @endif
 
 @php($esCerrado = $base->estado?->slug === 'cerrado')
+@php($esEfectiva = $base->estado?->slug === 'efectiva')
+@php($esPendienteSupervisor = $base->estado?->slug === 'pendiente-aprobacion-supervisor')
 @php($esSupervisor = auth()->user()?->role === 'supervisor')
-@if($esCerrado && !$esSupervisor)
-    <p><strong>Registro cerrado:</strong> no se puede editar. Si necesitas cambios, solicita reapertura al supervisor.</p>
+@if($esCerrado || $esEfectiva)
+    <p><strong>Registro finalizado:</strong> no se permite ninguna modificacion adicional.</p>
 @endif
-@if($esCerrado && $esSupervisor)
-    <h3>Reabrir / cambiar estado (Supervisor)</h3>
-    <form method="post" action="{{ route('base-asignada.reabrir-contactado', $base->id) }}" style="margin-bottom:10px;">
-        @csrf
-        <button type="submit">Reabrir y llevar a Contactado</button>
-    </form>
-    <form method="post" action="{{ route('base-asignada.cambiar-estado-supervisor', $base->id) }}">
-        @csrf
-        <label>Nuevo estado</label>
-        <select name="estado_id" required>
-            @foreach($estados as $estado)
-                <option value="{{ $estado->id }}">{{ $estado->nombre }}</option>
-            @endforeach
-        </select>
-        <button type="submit">Guardar cambio de estado</button>
-    </form>
+@if($esPendienteSupervisor)
+    <p><strong>Registro en proceso:</strong> esta en Pendiente de aprobacion (supervisor). No se puede modificar hasta que sea aprobado o devuelto.</p>
 @endif
-
 <h3>Nueva gestion</h3>
-@if(!$esCerrado || $esSupervisor)
+@if(!$esCerrado && !$esEfectiva && !$esPendienteSupervisor)
 <form method="post" action="{{ route('gestiones.store') }}">
     @csrf
     <input type="hidden" name="base_asignada_id" value="{{ $base->id }}">
@@ -102,6 +94,10 @@
             <label>Monto solicitado</label>
             <input type="text" inputmode="numeric" pattern="[0-9]*" id="monto_solicitado" name="monto_solicitado" value="{{ old('monto_solicitado', is_null($base->monto_solicitado) ? '' : (int)$base->monto_solicitado) }}" placeholder="Ej: 10000000">
         </div>
+        <div class="field">
+            <label>Tiempo invertido (min)</label>
+            <input type="number" min="1" max="1440" step="1" id="minutos_invertidos" name="minutos_invertidos" value="{{ old('minutos_invertidos') }}" placeholder="Ej: 15">
+        </div>
     </div>
     <label>Detalle de gestion</label>
     <textarea name="detalle" required>{{ old('detalle') }}</textarea>
@@ -125,7 +121,7 @@
 
 <h3>Historial</h3>
 <table>
-    <thead><tr><th>Fecha</th><th>Registrado por</th><th>Tipo</th><th>Estado</th><th>Proxima gestion</th><th>Detalle</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Registrado por</th><th>Tipo</th><th>Estado</th><th>Proxima gestion</th><th>Tiempo invertido</th><th>Detalle</th></tr></thead>
     <tbody>
         @forelse($gestiones as $gestion)
             <tr>
@@ -134,10 +130,11 @@
                 <td>{{ $gestion->tipo }}</td>
                 <td>{{ $gestion->estado?->nombre }}</td>
                 <td>{{ $gestion->proxima_gestion_at ? $gestion->proxima_gestion_at->format('d/m/Y H:i') : 'N/A' }}</td>
+                <td>{{ $gestion->minutos_invertidos ? ($gestion->minutos_invertidos . ' min') : 'N/A' }}</td>
                 <td>{{ $gestion->detalle }}</td>
             </tr>
         @empty
-            <tr><td colspan="6">Sin gestiones.</td></tr>
+            <tr><td colspan="7">Sin gestiones.</td></tr>
         @endforelse
     </tbody>
 </table>
@@ -174,7 +171,7 @@
     </tbody>
 </table>
 @else
-<p>Este registro no tiene cedula, por eso no se puede consultar historico cruzado.</p>
+<p>No se encontraron registros relacionados por cedula, telefono o nombre.</p>
 @endif
 <script>
     const estado = document.getElementById('estado_id');

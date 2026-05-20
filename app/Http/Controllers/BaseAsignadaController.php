@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AppNotification;
 use App\Models\BaseAsignada;
 use App\Models\Estado;
 use App\Models\Gestion;
@@ -213,6 +214,58 @@ class BaseAsignadaController extends Controller
 
         $kpiMesActual = $metricasPeriodo($inicioMes, $finMes);
         $kpiMesAnterior = $metricasPeriodo($inicioMesAnterior, $finMesAnterior);
+        $tiempoInvertidoMesMin = 0;
+        $promTiempoCierreMesMin = 0;
+        $efectivoSiMes = 0;
+        $efectivoNoMes = 0;
+        if (!$esSupervisor && $user) {
+            $tiempoInvertidoMesMin = (int) Gestion::query()
+                ->join('base_asignadas', 'base_asignadas.id', '=', 'gestions.base_asignada_id')
+                ->where('base_asignadas.asesor_id', $user->id)
+                ->whereBetween('gestions.created_at', [$inicioMes, $finMes])
+                ->sum('gestions.minutos_invertidos');
+
+            $cierresMesUsuario = BaseAsignada::query()
+                ->where('asesor_id', $user->id)
+                ->where('estado_id', $cerradoId)
+                ->where(function ($q) use ($inicioMes, $finMes, $cerradoId) {
+                    $q->whereBetween('cierre_solicitado_at', [$inicioMes, $finMes])
+                        ->orWhereExists(function ($sub) use ($inicioMes, $finMes, $cerradoId) {
+                            $sub->selectRaw('1')
+                                ->from('gestions')
+                                ->whereColumn('gestions.base_asignada_id', 'base_asignadas.id')
+                                ->where('gestions.estado_id', $cerradoId)
+                                ->whereBetween('gestions.created_at', [$inicioMes, $finMes]);
+                        });
+                })
+                ->get(['asignado_at', 'created_at', 'cierre_solicitado_at']);
+
+            if ($cierresMesUsuario->isNotEmpty()) {
+                $mins = [];
+                foreach ($cierresMesUsuario as $cierreBase) {
+                    $inicio = $cierreBase->asignado_at ?: $cierreBase->created_at;
+                    $fin = $cierreBase->cierre_solicitado_at ?: $cierreBase->created_at;
+                    if ($inicio && $fin) {
+                        $mins[] = Carbon::parse($inicio)->diffInMinutes(Carbon::parse($fin));
+                    }
+                }
+                if (count($mins) > 0) {
+                    $promTiempoCierreMesMin = (int) round(array_sum($mins) / count($mins));
+                }
+            }
+            $efectivoSiMes = (int) BaseAsignada::query()
+                ->where('asesor_id', $user->id)
+                ->where('estado_id', $cerradoId)
+                ->where('efectivo', true)
+                ->whereBetween('cierre_solicitado_at', [$inicioMes, $finMes])
+                ->count();
+            $efectivoNoMes = (int) BaseAsignada::query()
+                ->where('asesor_id', $user->id)
+                ->where('estado_id', $cerradoId)
+                ->where('efectivo', false)
+                ->whereBetween('cierre_solicitado_at', [$inicioMes, $finMes])
+                ->count();
+        }
 
         $canalesPermitidos = ['visita', 'oficina', 'llamada', 'redes sociales'];
         $canalesMesRaw = Gestion::query()
@@ -312,11 +365,45 @@ class BaseAsignadaController extends Controller
                     $cierresMes = (clone $cierresBaseMes)->count();
                     $montoColocadoMes = (clone $cierresBaseMes)->sum('monto_linea_credito');
                     $porcentajeCierreVsAsignados = $asignadosMes > 0 ? round(($cierresMes / $asignadosMes) * 100, 1) : 0;
+                    $tiempoInvertidoMinMes = (int) Gestion::query()
+                        ->join('base_asignadas', 'base_asignadas.id', '=', 'gestions.base_asignada_id')
+                        ->where('base_asignadas.asesor_id', $comercial->id)
+                        ->whereBetween('gestions.created_at', [$inicioMes, $finMes])
+                        ->sum('gestions.minutos_invertidos');
+                    $promTiempoCierreMin = 0;
+                    $cierresConTiempo = (clone $cierresBaseMes)->get(['asignado_at', 'created_at', 'cierre_solicitado_at']);
+                    if ($cierresConTiempo->isNotEmpty()) {
+                        $mins = [];
+                        foreach ($cierresConTiempo as $cierreBase) {
+                            $inicio = $cierreBase->asignado_at ?: $cierreBase->created_at;
+                            $fin = $cierreBase->cierre_solicitado_at ?: $cierreBase->created_at;
+                            if ($inicio && $fin) {
+                                $mins[] = Carbon::parse($inicio)->diffInMinutes(Carbon::parse($fin));
+                            }
+                        }
+                        if (count($mins) > 0) {
+                            $promTiempoCierreMin = (int) round(array_sum($mins) / count($mins));
+                        }
+                    }
 
                     $comercial->asignados_mes = $asignadosMes;
                     $comercial->cierres_mes = $cierresMes;
                     $comercial->porcentaje_cierre_vs_asignados = $porcentajeCierreVsAsignados;
                     $comercial->monto_colocado_mes = $montoColocadoMes;
+                    $comercial->tiempo_invertido_min_mes = $tiempoInvertidoMinMes;
+                    $comercial->prom_tiempo_cierre_min = $promTiempoCierreMin;
+                    $comercial->efectivo_si_mes = (int) BaseAsignada::query()
+                        ->where('asesor_id', $comercial->id)
+                        ->where('estado_id', $cerradoId)
+                        ->where('efectivo', true)
+                        ->whereBetween('cierre_solicitado_at', [$inicioMes, $finMes])
+                        ->count();
+                    $comercial->efectivo_no_mes = (int) BaseAsignada::query()
+                        ->where('asesor_id', $comercial->id)
+                        ->where('estado_id', $cerradoId)
+                        ->where('efectivo', false)
+                        ->whereBetween('cierre_solicitado_at', [$inicioMes, $finMes])
+                        ->count();
                     return $comercial;
                 });
         }
@@ -340,7 +427,11 @@ class BaseAsignadaController extends Controller
             'kpiMesActual',
             'kpiMesAnterior',
             'canalesMes',
-            'cierresCanalMes'
+            'cierresCanalMes',
+            'tiempoInvertidoMesMin',
+            'promTiempoCierreMesMin',
+            'efectivoSiMes',
+            'efectivoNoMes'
         ));
     }
 
@@ -473,10 +564,27 @@ class BaseAsignadaController extends Controller
                 ->latest('created_at')
                 ->limit(15)
                 ->get();
+        } elseif (!empty($base->telefono)) {
+            $telefono = trim((string) $base->telefono);
+            $historicoCedula = BaseAsignada::with(['estado', 'asesor'])
+                ->where('id', '!=', $base->id)
+                ->where('telefono', $telefono)
+                ->latest('created_at')
+                ->limit(15)
+                ->get();
+        } elseif (!empty($base->nombre)) {
+            $nombre = trim((string) $base->nombre);
+            $historicoCedula = BaseAsignada::with(['estado', 'asesor'])
+                ->where('id', '!=', $base->id)
+                ->where('nombre', $nombre)
+                ->latest('created_at')
+                ->limit(15)
+                ->get();
         }
         $estados = $this->estadosGestionables();
         $lineasCredito = self::LINEAS_CREDITO;
-        return view('base_asignadas.show', compact('base', 'gestiones', 'historicoCedula', 'estados', 'lineasCredito'));
+        $tiempoInvertidoRegistroMin = (int) Gestion::where('base_asignada_id', $base->id)->sum('minutos_invertidos');
+        return view('base_asignadas.show', compact('base', 'gestiones', 'historicoCedula', 'estados', 'lineasCredito', 'tiempoInvertidoRegistroMin'));
     }
 
     public function historicoCedula(Request $request)
@@ -645,6 +753,17 @@ class BaseAsignadaController extends Controller
             'tipo' => 'aprobacion_supervisor',
             'detalle' => 'Aprobacion de supervisor: gestion cerrada.',
         ]);
+        if ($base->asesor_id) {
+            AppNotification::create([
+                'user_id' => $base->asesor_id,
+                'title' => 'Gestion aprobada',
+                'message' => "El supervisor aprobo tu solicitud para {$base->nombre} ({$base->cedula}).",
+                'type' => 'aprobacion_supervisor',
+                'related_id' => $base->id,
+                'related_type' => BaseAsignada::class,
+                'event_at' => now(),
+            ]);
+        }
 
         return redirect()->route('base-asignada.pendientes')->with('ok', 'Gestion aprobada y marcada como cerrada.');
     }
@@ -680,6 +799,17 @@ class BaseAsignadaController extends Controller
             'tipo' => 'devolucion_supervisor',
             'detalle' => "Devolucion de supervisor: {$motivo}",
         ]);
+        if ($base->asesor_id) {
+            AppNotification::create([
+                'user_id' => $base->asesor_id,
+                'title' => 'Gestion devuelta',
+                'message' => "El supervisor devolvio tu gestion para {$base->nombre} ({$base->cedula}). Motivo: {$motivo}",
+                'type' => 'devolucion_supervisor',
+                'related_id' => $base->id,
+                'related_type' => BaseAsignada::class,
+                'event_at' => now(),
+            ]);
+        }
 
         return redirect()->route('base-asignada.pendientes')->with('ok', 'Gestion devuelta al comercial.');
     }

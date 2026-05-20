@@ -35,6 +35,7 @@ class GestionController extends Controller
             'tipo' => ['required', 'string', 'max:100'],
             'detalle' => ['required', 'string'],
             'proxima_gestion_at' => ['nullable', 'date'],
+            'minutos_invertidos' => ['nullable', 'integer', 'min:1', 'max:1440'],
             'linea_credito' => ['nullable', 'in:' . implode(',', self::LINEAS_CREDITO)],
             'monto_solicitado' => ['nullable', 'regex:/^[0-9]+$/'],
             'efectivo' => ['nullable', 'in:SI,NO'],
@@ -50,9 +51,14 @@ class GestionController extends Controller
             if (!$esSupervisor && $base->asesor_id !== $user?->id) {
                 abort(403);
             }
+            $esPendienteSupervisor = $base->estado?->slug === 'pendiente-aprobacion-supervisor';
+            if ($esPendienteSupervisor) {
+                return back()->withErrors(['estado_id' => 'Este registro ya esta en Pendiente de aprobacion (supervisor). Debes esperar aprobacion o devolucion.'])->withInput();
+            }
             $esCerrado = $base->estado?->slug === 'cerrado';
-            if ($esCerrado && !$esSupervisor) {
-                return back()->withErrors(['estado_id' => 'Este registro esta cerrado. Solo supervisor puede reabrirlo.'])->withInput();
+            $esEfectiva = $base->estado?->slug === 'efectiva';
+            if ($esCerrado || $esEfectiva) {
+                return back()->withErrors(['estado_id' => 'Este registro ya esta cerrado/finalizado y no permite mas modificaciones.'])->withInput();
             }
         }
 

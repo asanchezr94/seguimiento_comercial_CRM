@@ -15,11 +15,15 @@ class Gestion extends Model
         'tipo',
         'detalle',
         'proxima_gestion_at',
+        'minutos_invertidos',
     ];
 
     protected function casts(): array
     {
-        return ['proxima_gestion_at' => 'datetime'];
+        return [
+            'proxima_gestion_at' => 'datetime',
+            'minutos_invertidos' => 'integer',
+        ];
     }
 
     public function baseAsignada(): BelongsTo
