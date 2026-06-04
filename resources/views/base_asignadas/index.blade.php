@@ -1,20 +1,35 @@
 @extends('layout')
 
 @section('content')
-@php($isSupervisor = auth()->user()?->role === 'supervisor')
 @if($isSupervisor)
-<p><a href="{{ route('base-asignada.create') }}">+ Nueva base asignada</a></p>
-<p><button type="button" id="btn-open-csv">Cargar base (CSV)</button></p>
+<div class="actions" style="margin-bottom:12px; flex-wrap:nowrap;">
+    <button type="button" id="btn-open-manual">+ Cargar cliente individual</button>
+    <button type="button" id="btn-open-csv">Cargar base masiva (CSV)</button>
+</div>
 @endif
 
 <h3>Lotes</h3>
-<form method="get" action="{{ route('base-asignada.index') }}">
-    <label>Buscar lote</label>
-    <input type="text" name="lote" value="{{ request('lote') }}" placeholder="Nombre del lote">
+<form method="get" action="{{ route('base-asignada.index') }}" class="inline-filters">
+    <div class="field">
+        <label>Nombre del lote</label>
+        <input type="text" name="lote" value="{{ request('lote') }}" placeholder="Nombre del lote">
+    </div>
+    <div class="field">
+        <label>Origen</label>
+        <select name="origen">
+            <option value="">Todos</option>
+            <option value="llamada" @selected(request('origen') === 'llamada')>Llamada</option>
+            <option value="visita" @selected(request('origen') === 'visita')>Visita</option>
+            <option value="oficina" @selected(request('origen') === 'oficina')>Oficina</option>
+            <option value="redes sociales" @selected(request('origen') === 'redes sociales')>Redes sociales</option>
+            <option value="base interna" @selected(request('origen') === 'base interna')>Base interna</option>
+            <option value="referidos" @selected(request('origen') === 'referidos')>Referidos</option>
+        </select>
+    </div>
     <button type="submit">Filtrar</button>
     <a href="{{ route('base-asignada.index') }}">Limpiar</a>
 </form>
-<table>
+<table data-no-global-filters>
     <thead>
         <tr>
             <th>Lote</th>
@@ -49,15 +64,29 @@
 {{ $lotes->links() }}
 
 @if($isSupervisor)
-<div id="csv-modal" class="modal-backdrop" aria-hidden="true">
+@push('page-modals')
+<div id="manual-modal" class="modal-backdrop modal-backdrop-strong" aria-hidden="true">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 style="margin:0;">Nueva base asignada</h3>
+            <button type="button" class="modal-close" id="btn-close-manual">Cerrar</button>
+        </div>
+        <form method="post" action="{{ route('base-asignada.store') }}">
+            @csrf
+            @include('base_asignadas.form', ['base' => null])
+            <button type="submit">Guardar</button>
+        </form>
+    </div>
+</div>
+
+<div id="csv-modal" class="modal-backdrop modal-backdrop-strong" aria-hidden="true">
     <div class="modal-card">
         <div class="modal-header">
             <h3 style="margin:0;">Carga masiva CSV</h3>
             <button type="button" class="modal-close" id="btn-close-csv">Cerrar</button>
         </div>
-        <p>Columnas obligatorias en CSV: <code>nombre,telefono</code></p>
-        <p>Columnas opcionales: <code>cedula,linea_credito,email,empresa,observaciones,estado_slug,comercial_email</code></p>
-        <p><strong>Nota:</strong> <code>comercial_email</code> es opcional; si lo dejas vacio, entra sin asignar para repartir luego por lote.</p>
+        <p>Columnas obligatorias en CSV: <code>nombre,telefono</code>. El estado se guarda automaticamente como <strong>Nuevo</strong>.</p>
+        <p><a class="btn-link" href="{{ route('base-asignada.plantilla-csv') }}">Descargar plantilla CSV</a></p>
         <form method="post" action="{{ route('base-asignada.importar') }}" enctype="multipart/form-data">
             @csrf
             <label>Nombre del lote/base</label>
@@ -72,17 +101,34 @@
                 <option value="base interna" @selected(old('origen') === 'base interna')>Base interna</option>
                 <option value="referidos" @selected(old('origen') === 'referidos')>Referidos</option>
             </select>
+            <label>Observacion general</label>
+            <textarea name="observaciones" required>{{ old('observaciones') }}</textarea>
             <input type="file" name="archivo_csv" accept=".csv,.txt" required>
             <button type="submit">Importar</button>
         </form>
     </div>
 </div>
+@endpush
+
+@push('page-scripts')
 <script>
     (function () {
+        const manualModal = document.getElementById('manual-modal');
+        const openManualBtn = document.getElementById('btn-open-manual');
+        const closeManualBtn = document.getElementById('btn-close-manual');
         const modal = document.getElementById('csv-modal');
         const openBtn = document.getElementById('btn-open-csv');
         const closeBtn = document.getElementById('btn-close-csv');
-        if (!modal || !openBtn || !closeBtn) return;
+        if (!manualModal || !openManualBtn || !closeManualBtn || !modal || !openBtn || !closeBtn) return;
+
+        const openManual = () => {
+            manualModal.classList.add('open');
+            manualModal.setAttribute('aria-hidden', 'false');
+        };
+        const closeManual = () => {
+            manualModal.classList.remove('open');
+            manualModal.setAttribute('aria-hidden', 'true');
+        };
 
         const open = () => {
             modal.classList.add('open');
@@ -93,15 +139,25 @@
             modal.setAttribute('aria-hidden', 'true');
         };
 
+        openManualBtn.addEventListener('click', openManual);
+        closeManualBtn.addEventListener('click', closeManual);
+        manualModal.addEventListener('click', function (e) {
+            if (e.target === manualModal) closeManual();
+        });
+
         openBtn.addEventListener('click', open);
         closeBtn.addEventListener('click', close);
         modal.addEventListener('click', function (e) {
             if (e.target === modal) close();
         });
         document.addEventListener('keydown', function (e) {
-            if (e.key === 'Escape') close();
+            if (e.key === 'Escape') {
+                close();
+                closeManual();
+            }
         });
     })();
 </script>
+@endpush
 @endif
 @endsection

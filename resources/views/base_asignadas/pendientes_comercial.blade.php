@@ -2,7 +2,7 @@
 
 @section('content')
 <h2>Mis gestiones pendientes por aprobar</h2>
-<table>
+<table data-no-global-filters>
     <thead>
         <tr>
             <th>Lote</th>
@@ -15,20 +15,26 @@
         </tr>
     </thead>
     <tbody>
-        @forelse($bases as $base)
+        @forelse($registros as $base)
             <tr>
-                <td>{{ $base->lote_nombre }}</td>
-                <td>{{ $base->nombre }}</td>
+                <td>{{ $base->lote }}</td>
+                <td>{{ $base->cliente }}</td>
                 <td>{{ $base->cedula ?? 'N/A' }}</td>
-                <td>{{ $base->estado?->nombre ?? 'N/A' }}</td>
+                <td>{{ $base->estado_nombre ?? 'N/A' }}</td>
                 <td>{{ is_null($base->efectivo) ? 'N/A' : ($base->efectivo ? 'SI' : 'NO') }}</td>
-                <td>{{ is_null($base->monto_linea_credito) ? 'N/A' : number_format((float)$base->monto_linea_credito, 0, ',', '.') }}</td>
-                <td><a href="{{ route('base-asignada.show', $base->id) }}">Ver detalle</a></td>
+                <td>{{ is_null($base->monto) ? 'N/A' : number_format((float)$base->monto, 0, ',', '.') }}</td>
+                <td>
+                    @if($base->tipo_registro === 'cliente_potencial')
+                        <a href="{{ route('clientes-potenciales.show', $base->registro_id) }}">Ver detalle</a>
+                    @else
+                        <a href="{{ route('base-asignada.show', $base->registro_id) }}">Ver detalle</a>
+                    @endif
+                </td>
             </tr>
         @empty
             <tr><td colspan="7">No tienes gestiones pendientes por aprobar.</td></tr>
         @endforelse
     </tbody>
 </table>
-{{ $bases->links() }}
+{{ $registros->links() }}
 @endsection

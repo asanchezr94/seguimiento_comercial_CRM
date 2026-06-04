@@ -24,7 +24,9 @@ class AuthController extends Controller
         }
 
         $request->session()->regenerate();
-        return redirect()->intended(route('base-asignada.index'));
+        $request->session()->forget('url.intended');
+
+        return redirect()->route('base-asignada.index');
     }
 
     public function logout(Request $request)

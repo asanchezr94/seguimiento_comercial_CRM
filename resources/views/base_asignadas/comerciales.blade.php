@@ -14,7 +14,7 @@
         @forelse($comerciales as $comercial)
             <tr>
                 <td>{{ $comercial->name }}</td>
-                <td>{{ $comercial->bases_asignadas_count }}</td>
+                <td>{{ number_format((int) ($comercial->total_registros ?? 0), 0, ',', '.') }}</td>
                 <td><a href="{{ route('supervisor.comerciales.gestion', $comercial->id) }}">Ver gestion</a></td>
             </tr>
         @empty

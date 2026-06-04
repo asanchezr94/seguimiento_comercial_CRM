@@ -23,6 +23,12 @@ class BaseAsignada extends Model
         'linea_credito',
         'monto_solicitado',
         'efectivo',
+        'desembolso_estado',
+        'desembolso_estado_pendiente',
+        'desembolso_solicitado_at',
+        'desembolso_solicitado_por',
+        'desembolso_aprobado_at',
+        'desembolso_motivo_devolucion',
         'monto_linea_credito',
         'motivo_devolucion',
         'telefono',
@@ -31,11 +37,15 @@ class BaseAsignada extends Model
         'origen',
         'observaciones',
         'ultima_gestion_at',
+        'cierre_aprobado_at',
     ];
 
     protected $casts = [
         'asignado_at' => 'datetime',
         'ultima_gestion_at' => 'datetime',
+        'cierre_aprobado_at' => 'datetime',
+        'desembolso_solicitado_at' => 'datetime',
+        'desembolso_aprobado_at' => 'datetime',
     ];
 
     public function asesor(): BelongsTo

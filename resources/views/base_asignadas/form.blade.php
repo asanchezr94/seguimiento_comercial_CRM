@@ -1,5 +1,7 @@
-<label>Nombre de base/lote</label>
-<input name="lote_nombre" value="{{ old('lote_nombre', $base->lote_nombre ?? '') }}" placeholder="Ej: ESE Salud Pereira">
+@if(!empty($base))
+    <label>Nombre de base/lote</label>
+    <input name="lote_nombre" value="{{ old('lote_nombre', $base->lote_nombre ?? '') }}" placeholder="Ej: INDIVIDUAL">
+@endif
 
 <label>Nombre</label>
 <input name="nombre" value="{{ old('nombre', $base->nombre ?? '') }}" required>
@@ -16,7 +18,7 @@
 </select>
 
 <label>Telefono</label>
-<input name="telefono" value="{{ old('telefono', $base->telefono ?? '') }}">
+<input name="telefono" value="{{ old('telefono', $base->telefono ?? '') }}" required>
 
 <label>Email</label>
 <input name="email" value="{{ old('email', $base->email ?? '') }}">
@@ -34,7 +36,7 @@
     </select>
     <small>El origen se define al cargar la base y no se puede cambiar.</small>
 @else
-    <select name="origen">
+    <select name="origen" required>
         <option value="">Seleccione</option>
         @foreach(($origenesBase ?? []) as $origen)
             <option value="{{ $origen }}" @selected(old('origen', $base->origen ?? null) === $origen)>{{ ucfirst($origen) }}</option>
@@ -58,13 +60,5 @@
     @endforeach
 </select>
 
-<label>Estado</label>
-<select name="estado_id">
-    <option value="">Sin estado</option>
-    @foreach($estados as $estado)
-        <option value="{{ $estado->id }}" @selected(old('estado_id', $base->estado_id ?? null) == $estado->id)>{{ $estado->nombre }}</option>
-    @endforeach
-</select>
-
 <label>Observaciones</label>
-<textarea name="observaciones">{{ old('observaciones', $base->observaciones ?? '') }}</textarea>
+<textarea name="observaciones" required>{{ old('observaciones', $base->observaciones ?? '') }}</textarea>

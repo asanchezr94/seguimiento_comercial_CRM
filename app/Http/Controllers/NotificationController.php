@@ -11,7 +11,7 @@ class NotificationController extends Controller
     {
         $notifications = AppNotification::where('user_id', auth()->id())
             ->latest('created_at')
-            ->paginate(20)
+            ->paginate(10)
             ->withQueryString();
 
         return view('notifications.index', compact('notifications'));
@@ -26,4 +26,3 @@ class NotificationController extends Controller
         return back()->with('ok', 'Notificacion marcada como leida.');
     }
 }
-

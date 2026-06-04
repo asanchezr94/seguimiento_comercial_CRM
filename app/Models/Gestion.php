@@ -16,6 +16,9 @@ class Gestion extends Model
         'detalle',
         'proxima_gestion_at',
         'minutos_invertidos',
+        'es_vinculacion',
+        'es_ahorro',
+        'linea_credito_gestion',
     ];
 
     protected function casts(): array
@@ -23,6 +26,8 @@ class Gestion extends Model
         return [
             'proxima_gestion_at' => 'datetime',
             'minutos_invertidos' => 'integer',
+            'es_vinculacion' => 'boolean',
+            'es_ahorro' => 'boolean',
         ];
     }
 

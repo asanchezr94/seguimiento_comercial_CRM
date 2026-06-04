@@ -14,9 +14,11 @@
             --panel-soft: #f7fafc;
             --text: #10263f;
             --muted: #5e738a;
-            --line: #d5e1eb;
-            --primary: #0e7490;
-            --primary-strong: #0c5f76;
+            --line: #c2d7e8;
+            --primary: #0b6f9c;
+            --primary-strong: #07577c;
+            --primary-soft: #d8edf8;
+            --primary-table: #cfe8f6;
             --ok-bg: #e7f8ef;
             --ok-line: #9ad6b3;
             --danger-bg: #fff1f1;
@@ -83,6 +85,7 @@
         h2, h3 {
             letter-spacing: -0.015em;
             margin-top: 20px;
+            color: #073f61;
         }
         nav {
             display: flex;
@@ -102,13 +105,14 @@
             transition: all 0.2s ease;
         }
         nav a.active {
-            background: #dff3f8;
-            border-color: #8fd0e2;
-            color: #0a4f68;
+            background: var(--primary-soft);
+            border-color: #63afd2;
+            color: #063f5d;
+            box-shadow: inset 0 0 0 1px rgba(11, 111, 156, 0.12);
         }
         nav a:hover {
-            background: #e9f8fd;
-            border-color: #b9e5f4;
+            background: #e4f3fb;
+            border-color: #93cae4;
         }
         .user-row {
             display: flex;
@@ -157,7 +161,7 @@
             border-spacing: 0;
             margin-top: 12px;
             background: var(--panel);
-            border: 1px solid var(--line);
+            border: 1px solid #b5d1e4;
             border-radius: var(--radius);
             overflow: hidden;
             display: block;
@@ -165,7 +169,12 @@
             white-space: nowrap;
         }
         table thead tr {
-            background: #edf5fb;
+            background: var(--primary-table);
+            color: #063f5d;
+        }
+        table thead th {
+            border-bottom: 1px solid #a8cbe1;
+            font-weight: 800;
         }
         th, td {
             border-bottom: 1px solid #e3edf5;
@@ -177,7 +186,7 @@
             border-bottom: none;
         }
         tbody tr { transition: background-color 0.16s ease; }
-        tbody tr:hover { background: #f7fcff; }
+        tbody tr:hover { background: #f0f8fd; }
         .ok {
             background: var(--ok-bg);
             border: 1px solid var(--ok-line);
@@ -188,12 +197,12 @@
         .actions { display: flex; gap: 8px; flex-wrap: wrap; }
         form.inline { display: inline; }
         form { margin: 8px 0 12px; }
-        label { display: block; margin-top: 8px; font-weight: 600; color: #244660; }
+        label { display: block; margin-top: 8px; font-weight: 700; color: #124f73; }
         input, textarea, select {
             width: 100%;
             padding: 10px 12px;
             border-radius: 10px;
-            border: 1px solid #c8d8e6;
+            border: 1px solid #b6d1e5;
             background: #fbfdff;
             color: var(--text);
             font-family: inherit;
@@ -226,7 +235,7 @@
         }
         button:active, .btn-link:active { transform: translateY(1px); }
         a {
-            color: #0a5f80;
+            color: #075f8a;
         }
         .danger {
             background: var(--danger-bg);
@@ -285,6 +294,35 @@
             width: auto;
             min-width: 110px;
         }
+        .inline-filters .checkbox-field {
+            min-width: 210px;
+        }
+        .checkbox-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 44px;
+            margin-top: 6px;
+            padding: 10px 12px;
+            border: 1px solid #b6d1e5;
+            border-radius: 10px;
+            background: #fbfdff;
+            color: #124f73;
+            font-weight: 800;
+            cursor: pointer;
+        }
+        .checkbox-card:hover {
+            background: #eef8fd;
+            border-color: #8fc5df;
+        }
+        .checkbox-card input[type="checkbox"],
+        .inline-filters .checkbox-card input[type="checkbox"] {
+            width: 18px;
+            min-width: 18px;
+            height: 18px;
+            margin: 0;
+            accent-color: var(--primary);
+        }
         @media (max-width: 860px) {
             .user-row {
                 flex-direction: column;
@@ -314,6 +352,9 @@
             justify-content: center;
             z-index: 999;
             padding: 14px;
+        }
+        .modal-backdrop.modal-backdrop-strong {
+            background: rgba(4, 27, 46, 0.62);
         }
         .modal-backdrop.open { display: flex; }
         .modal-card {
@@ -368,6 +409,10 @@
             line-height: 1;
             padding: 0 6px;
         }
+        #btn-limpiar a {
+            color: white;
+            text-decoration: none;
+        }
     </style>
 </head>
 <body>
@@ -413,13 +458,15 @@
                 <nav>
                     <a class="{{ request()->routeIs('dashboard') ? 'active' : '' }}" href="{{ route('dashboard') }}">Dashboard</a>
                     <a class="{{ request()->routeIs('base-asignada.*') && !request()->routeIs('base-asignada.historico-cedula') ? 'active' : '' }}" href="{{ route('base-asignada.index') }}">Base asignada</a>
-                    <a class="{{ request()->routeIs('base-asignada.historico-cedula') ? 'active' : '' }}" href="{{ route('base-asignada.historico-cedula') }}">Historico por cedula</a>
+                    <a class="{{ request()->routeIs('base-asignada.historico-cedula') ? 'active' : '' }}" href="{{ route('base-asignada.historico-cedula') }}">Historico asociados</a>
                     <a class="{{ request()->routeIs('clientes-potenciales.*') ? 'active' : '' }}" href="{{ route('clientes-potenciales.index') }}">Clientes potenciales</a>
+                    <a class="{{ request()->routeIs('visitas.*') ? 'active' : '' }}" href="{{ route('visitas.index') }}">Visitas</a>
                     @if(auth()->user()->role === 'comercial')
                         <a class="{{ request()->routeIs('base-asignada.cerradas') ? 'active' : '' }}" href="{{ route('base-asignada.cerradas') }}">Mis cerrados</a>
                         <a class="{{ request()->routeIs('base-asignada.pendientes-comercial') ? 'active' : '' }}" href="{{ route('base-asignada.pendientes-comercial') }}">Pendientes por aprobar</a>
                     @endif
                     @if(auth()->user()->role === 'supervisor')
+                        <a class="{{ request()->routeIs('base-asignada.cerradas') ? 'active' : '' }}" href="{{ route('base-asignada.cerradas') }}">Mis cerrados</a>
                         <a class="{{ request()->routeIs('base-asignada.pendientes*') ? 'active' : '' }}" href="{{ route('base-asignada.pendientes') }}">Gestiones pendientes por aprobar</a>
                         <a class="{{ request()->routeIs('supervisor.comerciales*') ? 'active' : '' }}" href="{{ route('supervisor.comerciales') }}">Comerciales y gestion</a>
                     @endif
@@ -454,6 +501,7 @@
             @yield('content')
         </main>
     </div>
+    @stack('page-modals')
     <div class="modal-backdrop" id="notifications-modal">
         <div class="modal-card">
             <div class="modal-header">
@@ -565,6 +613,103 @@
                 if (e.key === 'Escape') close();
             });
         })();
+        (function () {
+            document.querySelectorAll('form').forEach((form) => {
+                form.addEventListener('submit', () => {
+                    if (form.dataset.submitting === '1') return;
+                    form.dataset.submitting = '1';
+                    form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach((button) => {
+                        button.dataset.originalText = button.tagName === 'BUTTON' ? button.textContent : button.value;
+                        if (button.tagName === 'BUTTON') {
+                            button.textContent = 'Procesando...';
+                        } else {
+                            button.value = 'Procesando...';
+                        }
+                        button.disabled = true;
+                    });
+                });
+            });
+        })();
+        (function () {
+            const normalize = (txt) =>
+                (txt || '')
+                    .toString()
+                    .normalize('NFD')
+                    .replace(/[\u0300-\u036f]/g, '')
+                    .toLowerCase();
+
+            const tables = Array.from(document.querySelectorAll('main.panel table'));
+            tables.forEach((table) => {
+                if (table.hasAttribute('data-no-global-filters')) return;
+                const headCells = Array.from(table.querySelectorAll('thead th'));
+                if (headCells.length === 0) return;
+
+                const wanted = ['nombre', 'cliente', 'asesor', 'comercial', 'usuario'];
+                let targetCol = -1;
+                let estadoCol = -1;
+                for (let i = 0; i < headCells.length; i++) {
+                    const h = normalize(headCells[i].textContent);
+                    if (wanted.some((w) => h.includes(w))) {
+                        targetCol = i;
+                    }
+                    if (h.includes('estado')) estadoCol = i;
+                }
+                if (targetCol < 0 && estadoCol < 0) return;
+
+                const wrap = document.createElement('div');
+                wrap.style.margin = '8px 0 6px';
+                wrap.style.display = 'flex';
+                wrap.style.gap = '10px';
+                wrap.style.flexWrap = 'wrap';
+                let input = null;
+                let estadoInput = null;
+                if (targetCol >= 0) {
+                    const group = document.createElement('div');
+                    const label = document.createElement('label');
+                    label.textContent = 'Filtrar por nombre';
+                    label.style.display = 'block';
+                    input = document.createElement('input');
+                    input.type = 'text';
+                    input.placeholder = 'Escribe un nombre...';
+                    input.style.maxWidth = '260px';
+                    group.appendChild(label);
+                    group.appendChild(input);
+                    wrap.appendChild(group);
+                }
+                if (estadoCol >= 0) {
+                    const groupE = document.createElement('div');
+                    const labelE = document.createElement('label');
+                    labelE.textContent = 'Filtrar por estado';
+                    labelE.style.display = 'block';
+                    estadoInput = document.createElement('input');
+                    estadoInput.type = 'text';
+                    estadoInput.placeholder = 'Ej: cerrado, nuevo...';
+                    estadoInput.style.maxWidth = '220px';
+                    groupE.appendChild(labelE);
+                    groupE.appendChild(estadoInput);
+                    wrap.appendChild(groupE);
+                }
+                table.parentNode.insertBefore(wrap, table);
+
+                const rows = Array.from(table.querySelectorAll('tbody tr'));
+                const applyFilters = () => {
+                    const q = normalize(input?.value || '');
+                    const qe = normalize(estadoInput?.value || '');
+                    rows.forEach((tr) => {
+                        const cells = tr.querySelectorAll('td');
+                        if (cells.length === 0) return;
+                        const text = normalize(targetCol >= 0 ? (cells[targetCol]?.textContent || '') : '');
+                        const textE = normalize(estadoCol >= 0 ? (cells[estadoCol]?.textContent || '') : '');
+                        const okNombre = q === '' || text.includes(q);
+                        const okEstado = qe === '' || textE.includes(qe);
+                        tr.style.display = okNombre && okEstado ? '' : 'none';
+                    });
+                };
+                input?.addEventListener('input', applyFilters);
+                estadoInput?.addEventListener('input', applyFilters);
+            });
+        })();
     </script>
+    @stack('page-scripts')
 </body>
 </html>

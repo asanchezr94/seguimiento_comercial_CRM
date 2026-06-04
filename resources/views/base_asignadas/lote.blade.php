@@ -1,24 +1,11 @@
 @extends('layout')
 
 @section('content')
-<h2>Lote: {{ $loteNombre }}</h2>
+<div class="actions" style="justify-content:space-between; align-items:center; margin-bottom:10px;">
+    <h2 style="margin:0;">Lote: {{ $loteNombre }}</h2>
+    <p><a class="btn-link" href="{{ route('base-asignada.index') }}">← Volver al listado de lotes</a></p>
+</div>
 <p>Total registros del lote: <strong>{{ $totalRegistrosLote }}</strong></p>
-<p>Registros visibles en esta pagina: <strong>{{ $bases->count() }}</strong></p>
-
-<h3>Filtros</h3>
-<form method="get" action="{{ route('base-asignada.lote', ['loteRef' => $loteUid]) }}">
-    <label>Estado</label>
-    <select name="estado_id">
-        <option value="">Todos</option>
-        @foreach($estadosFiltro as $estado)
-            <option value="{{ $estado->id }}" @selected(request('estado_id') == $estado->id)>{{ $estado->nombre }}</option>
-        @endforeach
-    </select>
-    <label>Nombre o cedula</label>
-    <input type="text" name="q" value="{{ request('q') }}" placeholder="Buscar por nombre o cedula">
-    <button type="submit">Filtrar</button>
-    <a href="{{ route('base-asignada.lote', ['loteRef' => $loteUid]) }}">Limpiar</a>
-</form>
 
 @if(auth()->user()?->role === 'supervisor')
 <h3>Asignacion por lote</h3>
@@ -45,7 +32,25 @@
 @endif
 
 <h3>Detalle del lote</h3>
-<table>
+<h3>Filtros</h3>
+<form method="get" action="{{ route('base-asignada.lote', ['loteRef' => $loteUid]) }}" class="inline-filters">
+    <div class="field">
+        <label>Estado</label>
+        <select name="estado_id">
+            <option value="">Todos</option>
+            @foreach($estadosFiltro as $estado)
+                <option value="{{ $estado->id }}" @selected(request('estado_id') == $estado->id)>{{ $estado->nombre }}</option>
+            @endforeach
+        </select>
+    </div>
+    <div class="field" style="min-width:260px;">
+        <label>Nombre, cedula o celular</label>
+        <input type="text" name="q" value="{{ request('q') }}" placeholder="Buscar por nombre, cedula o celular">
+    </div>
+    <button type="submit">Filtrar</button>
+    <a href="{{ route('base-asignada.lote', ['loteRef' => $loteUid]) }}">Limpiar</a>
+</form>
+<table data-no-global-filters>
     <thead>
         <tr>
             <th>Nombre</th>

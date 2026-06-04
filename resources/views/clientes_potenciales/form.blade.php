@@ -1,6 +1,17 @@
 <label>Nombre</label>
 <input name="nombre" value="{{ old('nombre', $cliente->nombre ?? '') }}" required>
 
+<label>Cedula</label>
+<input name="cedula" value="{{ old('cedula', $cliente->cedula ?? '') }}">
+
+<label>Linea de credito</label>
+<select name="linea_credito">
+    <option value="">Seleccione</option>
+    @foreach(($lineasCredito ?? []) as $linea)
+        <option value="{{ $linea }}" @selected(old('linea_credito', $cliente->linea_credito ?? null) === $linea)>{{ $linea }}</option>
+    @endforeach
+</select>
+
 <label>Telefono</label>
 <input name="telefono" value="{{ old('telefono', $cliente->telefono ?? '') }}">
 
@@ -10,16 +21,13 @@
 <label>Empresa</label>
 <input name="empresa" value="{{ old('empresa', $cliente->empresa ?? '') }}">
 
-<label>Fuente</label>
-<input name="fuente" value="{{ old('fuente', $cliente->fuente ?? '') }}">
-
-<label>Estado</label>
-<select name="estado_id">
-    <option value="">Sin estado</option>
-    @foreach($estados as $estado)
-        <option value="{{ $estado->id }}" @selected(old('estado_id', $cliente->estado_id ?? null) == $estado->id)>{{ $estado->nombre }}</option>
+<label>Origen</label>
+<select name="fuente" required>
+    <option value="">Seleccione</option>
+    @foreach(($origenes ?? []) as $origen)
+        <option value="{{ $origen }}" @selected(old('fuente', $cliente->fuente ?? null) === $origen)>{{ ucfirst($origen) }}</option>
     @endforeach
 </select>
 
 <label>Observaciones</label>
-<textarea name="observaciones">{{ old('observaciones', $cliente->observaciones ?? '') }}</textarea>
+<textarea name="observaciones" required>{{ old('observaciones', $cliente->observaciones ?? '') }}</textarea>

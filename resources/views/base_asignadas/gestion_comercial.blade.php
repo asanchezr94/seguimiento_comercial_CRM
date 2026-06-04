@@ -40,4 +40,35 @@
     </tbody>
 </table>
 {{ $lotes->links() }}
+
+<h3>Clientes potenciales asignados a {{ $comercial->name }}</h3>
+<table>
+    <thead>
+        <tr>
+            <th>Nombre</th>
+            <th>Cedula</th>
+            <th>Linea de credito</th>
+            <th>Empresa</th>
+            <th>Estado</th>
+            <th>Ultima modificacion</th>
+            <th>Accion</th>
+        </tr>
+    </thead>
+    <tbody>
+        @forelse($clientesPotenciales as $cp)
+            <tr>
+                <td>{{ $cp->nombre }}</td>
+                <td>{{ $cp->cedula ?? 'N/A' }}</td>
+                <td>{{ $cp->linea_credito ?? 'N/A' }}</td>
+                <td>{{ $cp->empresa ?? 'N/A' }}</td>
+                <td>{{ $cp->estado?->nombre ?? 'Sin estado' }}</td>
+                <td>{{ ($cp->ultima_gestion_at ?? $cp->updated_at)?->format('d/m/Y H:i') ?? 'N/A' }}</td>
+                <td><a href="{{ route('clientes-potenciales.show', $cp->id) }}">Gestionar</a></td>
+            </tr>
+        @empty
+            <tr><td colspan="7">Sin clientes potenciales para este comercial.</td></tr>
+        @endforelse
+    </tbody>
+</table>
+{{ $clientesPotenciales->links() }}
 @endsection
