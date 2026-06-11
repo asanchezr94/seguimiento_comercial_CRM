@@ -8,23 +8,23 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (Schema::hasColumn('visitas', 'finaliza_at')) {
+        if (! Schema::hasTable('visitas') || Schema::hasColumn('visitas', 'detalle_inicial')) {
             return;
         }
 
         Schema::table('visitas', function (Blueprint $table) {
-            $table->dateTime('finaliza_at')->nullable()->after('programada_at');
+            $table->text('detalle_inicial')->nullable()->after('direccion');
         });
     }
 
     public function down(): void
     {
-        if (! Schema::hasColumn('visitas', 'finaliza_at')) {
+        if (! Schema::hasTable('visitas') || ! Schema::hasColumn('visitas', 'detalle_inicial')) {
             return;
         }
 
         Schema::table('visitas', function (Blueprint $table) {
-            $table->dropColumn('finaliza_at');
+            $table->dropColumn('detalle_inicial');
         });
     }
 };

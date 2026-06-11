@@ -41,9 +41,8 @@ class BaseAsignadaController extends Controller
         'Por desembolsar',
         'desembolsado',
         'aplazado',
-        'negados',
+        'negado',
         'desistido',
-        'pendiente de radicar',
     ];
 
     private function isSupervisor(): bool
@@ -59,6 +58,118 @@ class BaseAsignadaController extends Controller
     private function rolesGestores(): array
     {
         return ['comercial', 'supervisor'];
+    }
+
+    private function conteosDesembolsoUsuario(int $userId, Carbon $inicio, Carbon $fin, ?int $cerradoId): array
+    {
+        $estados = [
+            'desembolsado' => 'desembolsado',
+            'por_desembolsar' => 'por desembolsar',
+            'aplazado' => 'aplazado',
+            'negado' => 'negado',
+            'desistido' => 'desistido',
+        ];
+
+        $conteos = array_fill_keys(array_keys($estados), 0);
+        foreach (array_keys($estados) as $key) {
+            $conteos["monto_{$key}"] = 0;
+        }
+        if (!$cerradoId) {
+            return $conteos;
+        }
+
+        foreach ($estados as $key => $estado) {
+            $baseQuery = BaseAsignada::query()
+                ->where('asesor_id', $userId)
+                ->where('estado_id', $cerradoId)
+                ->where('efectivo', true)
+                ->whereRaw("LOWER(TRIM(COALESCE(desembolso_estado, ''))) = ?", [$estado])
+                ->where(function ($q) use ($inicio, $fin, $cerradoId) {
+                    $q->whereBetween('cierre_solicitado_at', [$inicio, $fin])
+                        ->orWhereExists(function ($sub) use ($inicio, $fin, $cerradoId) {
+                            $sub->selectRaw('1')
+                                ->from('gestions')
+                                ->whereColumn('gestions.base_asignada_id', 'base_asignadas.id')
+                                ->where('gestions.estado_id', $cerradoId)
+                                ->whereBetween('gestions.created_at', [$inicio, $fin]);
+                        });
+                });
+
+            $base = (clone $baseQuery)->count();
+            $baseMonto = (float) (clone $baseQuery)->sum('monto_linea_credito');
+
+            $clienteQuery = Schema::hasColumn('cliente_potencials', 'desembolso_estado')
+                ? ClientePotencial::query()
+                    ->where('asesor_id', $userId)
+                    ->where('estado_id', $cerradoId)
+                    ->where('efectivo', true)
+                    ->whereRaw("LOWER(TRIM(COALESCE(desembolso_estado, ''))) = ?", [$estado])
+                    ->where(function ($q) use ($inicio, $fin, $cerradoId) {
+                        if (Schema::hasColumn('cliente_potencials', 'cierre_solicitado_at')) {
+                            $q->whereBetween('cierre_solicitado_at', [$inicio, $fin]);
+                        }
+                        $q->orWhereExists(function ($sub) use ($inicio, $fin, $cerradoId) {
+                            $sub->selectRaw('1')
+                                ->from('gestions')
+                                ->whereColumn('gestions.cliente_potencial_id', 'cliente_potencials.id')
+                                ->where('gestions.estado_id', $cerradoId)
+                                ->whereBetween('gestions.created_at', [$inicio, $fin]);
+                        });
+                    })
+                : null;
+
+            $cliente = $clienteQuery ? (clone $clienteQuery)->count() : 0;
+            $clienteMonto = $clienteQuery ? (float) (clone $clienteQuery)->sum('monto_linea_credito') : 0;
+
+            $conteos[$key] = (int) $base + (int) $cliente;
+            $conteos["monto_{$key}"] = $baseMonto + $clienteMonto;
+        }
+
+        return $conteos;
+    }
+
+    private function resumenAhorrosUsuario(int $userId, Carbon $inicio, Carbon $fin, ?int $cerradoId): array
+    {
+        $resumen = ['cantidad' => 0, 'monto' => 0];
+        if (!$cerradoId || !Schema::hasColumn('gestions', 'es_ahorro')) {
+            return $resumen;
+        }
+
+        $baseQuery = Gestion::query()
+            ->where('asesor_id', $userId)
+            ->where('es_ahorro', true)
+            ->whereBetween('gestions.created_at', [$inicio, $fin])
+            ->whereNotNull('base_asignada_id')
+            ->whereExists(function ($sub) use ($cerradoId) {
+                $sub->selectRaw('1')
+                    ->from('base_asignadas')
+                    ->whereColumn('base_asignadas.id', 'gestions.base_asignada_id')
+                    ->where('base_asignadas.estado_id', $cerradoId)
+                    ->where('base_asignadas.efectivo', true);
+            });
+
+        $clienteQuery = Gestion::query()
+            ->where('asesor_id', $userId)
+            ->where('es_ahorro', true)
+            ->whereBetween('gestions.created_at', [$inicio, $fin])
+            ->whereNotNull('cliente_potencial_id')
+            ->whereExists(function ($sub) use ($cerradoId) {
+                $sub->selectRaw('1')
+                    ->from('cliente_potencials')
+                    ->whereColumn('cliente_potencials.id', 'gestions.cliente_potencial_id')
+                    ->where('cliente_potencials.estado_id', $cerradoId)
+                    ->where('cliente_potencials.efectivo', true);
+            });
+
+        $resumen['cantidad'] = (int) (clone $baseQuery)->distinct('base_asignada_id')->count('base_asignada_id')
+            + (int) (clone $clienteQuery)->distinct('cliente_potencial_id')->count('cliente_potencial_id');
+
+        if (Schema::hasColumn('gestions', 'monto_ahorro')) {
+            $resumen['monto'] = (float) (clone $baseQuery)->sum('monto_ahorro')
+                + (float) (clone $clienteQuery)->sum('monto_ahorro');
+        }
+
+        return $resumen;
     }
 
     private function estadosGestionables()
@@ -163,12 +274,31 @@ class BaseAsignadaController extends Controller
         $comercial->porcentaje_cierre_vs_asignados = $asignados > 0 ? round(($cierres / $asignados) * 100, 1) : 0;
         $comercial->monto_colocado_mes = (float) (clone $cierresBase)->sum('monto_linea_credito') + (float) (clone $cierresCp)->sum('monto_linea_credito');
         $comercial->monto_solicitado_mes = (float) (clone $basePeriodo)->sum('monto_solicitado') + (float) (clone $cpPeriodo)->sum('monto_solicitado');
+        $comercial->total_llamadas_mes = (int) Gestion::query()
+            ->where('asesor_id', $comercial->id)
+            ->whereRaw("LOWER(TRIM(tipo)) = 'llamada'")
+            ->whereBetween('created_at', [$inicio, $fin])
+            ->count();
+        $resumenAhorros = $this->resumenAhorrosUsuario((int) $comercial->id, $inicio, $fin, $cerradoId);
+        $comercial->ahorros_mes = $resumenAhorros['cantidad'];
+        $comercial->monto_ahorros_mes = $resumenAhorros['monto'];
         $comercial->tiempo_invertido_min_mes = (int) Gestion::query()
             ->where('asesor_id', $comercial->id)
             ->whereBetween('created_at', [$inicio, $fin])
             ->sum('minutos_invertidos');
         $comercial->efectivo_si_mes = (int) (clone $cierresBase)->where('efectivo', true)->count() + (int) (clone $cierresCp)->where('efectivo', true)->count();
         $comercial->efectivo_no_mes = (int) (clone $cierresBase)->where('efectivo', false)->count() + (int) (clone $cierresCp)->where('efectivo', false)->count();
+        $conteosDesembolso = $this->conteosDesembolsoUsuario((int) $comercial->id, $inicio, $fin, $cerradoId);
+        $comercial->desembolso_desembolsado_mes = $conteosDesembolso['desembolsado'];
+        $comercial->desembolso_por_desembolsar_mes = $conteosDesembolso['por_desembolsar'];
+        $comercial->desembolso_aplazado_mes = $conteosDesembolso['aplazado'];
+        $comercial->desembolso_negado_mes = $conteosDesembolso['negado'];
+        $comercial->desembolso_desistido_mes = $conteosDesembolso['desistido'];
+        $comercial->monto_desembolso_desembolsado_mes = $conteosDesembolso['monto_desembolsado'];
+        $comercial->monto_desembolso_por_desembolsar_mes = $conteosDesembolso['monto_por_desembolsar'];
+        $comercial->monto_desembolso_aplazado_mes = $conteosDesembolso['monto_aplazado'];
+        $comercial->monto_desembolso_negado_mes = $conteosDesembolso['monto_negado'];
+        $comercial->monto_desembolso_desistido_mes = $conteosDesembolso['monto_desistido'];
         $comercial->monto_desembolsado_mes = (float) BaseAsignada::query()
             ->where('asesor_id', $comercial->id)
             ->where('estado_id', $cerradoId)
@@ -262,12 +392,39 @@ class BaseAsignadaController extends Controller
             $origen = trim((string) request('origen'));
             $query->where('origen', $origen);
         }
+        if (request()->filled('mes')) {
+            $mesFiltro = max(1, min(12, (int) request('mes')));
+            $anioFiltro = request()->filled('anio')
+                ? max(2026, min(2036, (int) request('anio')))
+                : (int) now()->year;
+            $inicioFiltro = Carbon::create($anioFiltro, $mesFiltro, 1)->startOfMonth();
+            $finFiltro = (clone $inicioFiltro)->endOfMonth();
+            $query->whereBetween('created_at', [$inicioFiltro, $finFiltro]);
+        } elseif (request()->filled('anio')) {
+            $anioFiltro = max(2026, min(2036, (int) request('anio')));
+            $query->whereBetween('created_at', [
+                Carbon::create($anioFiltro, 1, 1)->startOfYear(),
+                Carbon::create($anioFiltro, 12, 31)->endOfYear(),
+            ]);
+        }
 
         if (!$isSupervisor) {
             $query->where('asesor_id', auth()->id());
         }
 
-        $lotes = $query->groupBy('lote_uid', 'lote_nombre')->orderBy('lote_nombre')->paginate(10)->withQueryString();
+        $rows = $query->groupBy('lote_uid', 'lote_nombre')->orderBy('lote_nombre')->get();
+        $page = LengthAwarePaginator::resolveCurrentPage();
+        $perPage = 10;
+        $lotes = new LengthAwarePaginator(
+            $rows->forPage($page, $perPage)->values(),
+            $rows->count(),
+            $perPage,
+            $page,
+            [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ]
+        );
         $lotes->each(function ($lote) {
             $total = (int) $lote->total;
             $gestionados = (int) $lote->gestionados;
@@ -301,6 +458,16 @@ class BaseAsignadaController extends Controller
     {
         $user = auth()->user();
         $esSupervisor = $this->isSupervisor();
+        $asesoresFiltro = $esSupervisor
+            ? User::whereIn('role', $this->rolesGestores())->orderBy('name')->get()
+            : collect();
+        $asesorFiltroId = null;
+        if ($esSupervisor && $request->filled('asesor_id')) {
+            $asesorIdRequest = (int) $request->input('asesor_id');
+            if ($asesoresFiltro->contains('id', $asesorIdRequest)) {
+                $asesorFiltroId = $asesorIdRequest;
+            }
+        }
         $clienteTieneCamposCierre = Schema::hasColumns('cliente_potencials', [
             'efectivo',
             'monto_linea_credito',
@@ -313,15 +480,21 @@ class BaseAsignadaController extends Controller
         $baseQuery = BaseAsignada::query();
         if (!$esSupervisor) {
             $baseQuery->where('asesor_id', $user?->id);
+        } elseif ($asesorFiltroId) {
+            $baseQuery->where('asesor_id', $asesorFiltroId);
         }
 
         $basePorLote = BaseAsignada::query();
         if (!$esSupervisor) {
             $basePorLote->where('asesor_id', $user?->id);
+        } elseif ($asesorFiltroId) {
+            $basePorLote->where('asesor_id', $asesorFiltroId);
         }
         $clienteQuery = ClientePotencial::query();
         if (!$esSupervisor) {
             $clienteQuery->where('asesor_id', $user?->id);
+        } elseif ($asesorFiltroId) {
+            $clienteQuery->where('asesor_id', $asesorFiltroId);
         }
 
         $mes = max(1, min(12, (int) $request->input('mes', now()->month)));
@@ -406,6 +579,14 @@ class BaseAsignadaController extends Controller
                 ->distinct('cliente_potencial_id')
                 ->count('cliente_potencial_id');
             $registrosGestionadosPeriodo = $registrosGestionadosBase + $registrosGestionadosClientes;
+            $totalLlamadasPeriodo = Gestion::query()
+                ->whereRaw("LOWER(TRIM(tipo)) = 'llamada'")
+                ->whereBetween('created_at', [$inicio, $fin])
+                ->where(function ($q) use ($basePorLote, $clienteQuery) {
+                    $q->whereIn('base_asignada_id', (clone $basePorLote)->select('id'))
+                        ->orWhereIn('cliente_potencial_id', (clone $clienteQuery)->select('id'));
+                })
+                ->count();
             $cierresBasePeriodo = (clone $basePorLote)
                 ->where('estado_id', $cerradoId)
                 ->where(function ($q) use ($inicio, $fin, $cerradoId) {
@@ -472,6 +653,8 @@ class BaseAsignadaController extends Controller
                     ->whereBetween('desembolso_aprobado_at', [$inicio, $fin])
                     ->count() : 0);
             $vinculacionesPeriodo = 0;
+            $ahorrosPeriodo = 0;
+            $montoAhorrosPeriodo = 0;
             if (Schema::hasColumns('gestions', ['es_vinculacion', 'base_asignada_id', 'cliente_potencial_id'])) {
                 $baseVinculaciones = Gestion::query()
                     ->where('es_vinculacion', true)
@@ -506,6 +689,53 @@ class BaseAsignadaController extends Controller
                     : 0;
 
                 $vinculacionesPeriodo = $baseVinculaciones + $clienteVinculaciones;
+
+                if (Schema::hasColumn('gestions', 'es_ahorro')) {
+                    $baseAhorrosQuery = Gestion::query()
+                        ->where('es_ahorro', true)
+                        ->where('estado_id', $pendienteId)
+                        ->whereBetween('gestions.created_at', [$inicio, $fin])
+                        ->whereIn('base_asignada_id', (clone $basePorLote)->select('id'))
+                        ->whereExists(function ($sub) use ($cerradoId) {
+                            $sub->selectRaw('1')
+                                ->from('base_asignadas')
+                                ->whereColumn('base_asignadas.id', 'gestions.base_asignada_id')
+                                ->where('base_asignadas.estado_id', $cerradoId)
+                                ->where('base_asignadas.efectivo', true);
+                        });
+
+                    $baseAhorros = (clone $baseAhorrosQuery)
+                        ->distinct('base_asignada_id')
+                        ->count('base_asignada_id');
+                    $baseMontoAhorros = Schema::hasColumn('gestions', 'monto_ahorro')
+                        ? (float) (clone $baseAhorrosQuery)->sum('monto_ahorro')
+                        : 0;
+
+                    $clienteAhorrosQuery = $clienteTieneCamposCierre
+                        ? Gestion::query()
+                            ->where('es_ahorro', true)
+                            ->where('estado_id', $pendienteId)
+                            ->whereBetween('gestions.created_at', [$inicio, $fin])
+                            ->whereIn('cliente_potencial_id', (clone $clienteQuery)->select('id'))
+                            ->whereExists(function ($sub) use ($cerradoId) {
+                                $sub->selectRaw('1')
+                                    ->from('cliente_potencials')
+                                    ->whereColumn('cliente_potencials.id', 'gestions.cliente_potencial_id')
+                                    ->where('cliente_potencials.estado_id', $cerradoId)
+                                    ->where('cliente_potencials.efectivo', true);
+                            })
+                        : null;
+
+                    $clienteAhorros = $clienteAhorrosQuery
+                        ? (clone $clienteAhorrosQuery)->distinct('cliente_potencial_id')->count('cliente_potencial_id')
+                        : 0;
+                    $clienteMontoAhorros = ($clienteAhorrosQuery && Schema::hasColumn('gestions', 'monto_ahorro'))
+                        ? (float) (clone $clienteAhorrosQuery)->sum('monto_ahorro')
+                        : 0;
+
+                    $ahorrosPeriodo = $baseAhorros + $clienteAhorros;
+                    $montoAhorrosPeriodo = $baseMontoAhorros + $clienteMontoAhorros;
+                }
             }
 
             $porcentajeGestionPeriodo = $registrosCargadosPeriodo > 0
@@ -517,6 +747,7 @@ class BaseAsignadaController extends Controller
             return [
                 'registros_cargados' => $registrosCargadosPeriodo,
                 'registros_gestionados' => $registrosGestionadosPeriodo,
+                'total_llamadas' => $totalLlamadasPeriodo,
                 'porcentaje_gestion' => $porcentajeGestionPeriodo,
                 'cierres' => $cierresPeriodo,
                 'cierres_no_efectivos' => $cierresNoEfectivosPeriodo,
@@ -526,6 +757,8 @@ class BaseAsignadaController extends Controller
                 'monto_desembolsado' => $montoDesembolsadoPeriodo,
                 'desembolsos' => $desembolsosPeriodo,
                 'vinculaciones' => $vinculacionesPeriodo,
+                'ahorros' => $ahorrosPeriodo,
+                'monto_ahorros' => $montoAhorrosPeriodo,
             ];
         };
 
@@ -567,8 +800,7 @@ class BaseAsignadaController extends Controller
         $promAprobacionSupervisorMesMin = (int) round((float) ($promAprob ?? 0));
         if (!$esSupervisor && $user) {
             $tiempoInvertidoMesMin = (int) Gestion::query()
-                ->join('base_asignadas', 'base_asignadas.id', '=', 'gestions.base_asignada_id')
-                ->where('base_asignadas.asesor_id', $user->id)
+                ->where('asesor_id', $user->id)
                 ->whereBetween('gestions.created_at', [$inicioMes, $finMes])
                 ->sum('gestions.minutos_invertidos');
 
@@ -621,6 +853,7 @@ class BaseAsignadaController extends Controller
             ->when(!$esSupervisor, function ($q) use ($user) {
                 $q->where('base_asignadas.asesor_id', $user?->id);
             })
+            ->when($asesorFiltroId, fn ($q) => $q->where('base_asignadas.asesor_id', $asesorFiltroId))
             ->selectRaw("LOWER(TRIM(base_asignadas.origen)) as canal")
             ->selectRaw('count(distinct gestions.base_asignada_id) as total_gestiones')
             ->selectRaw('count(distinct gestions.base_asignada_id) as registros_unicos')
@@ -633,6 +866,7 @@ class BaseAsignadaController extends Controller
             ->when(!$esSupervisor, function ($q) use ($user) {
                 $q->where('cliente_potencials.asesor_id', $user?->id);
             })
+            ->when($asesorFiltroId, fn ($q) => $q->where('cliente_potencials.asesor_id', $asesorFiltroId))
             ->selectRaw("LOWER(TRIM(cliente_potencials.fuente)) as canal")
             ->selectRaw('count(distinct gestions.cliente_potencial_id) as total_gestiones')
             ->selectRaw('count(distinct gestions.cliente_potencial_id) as registros_unicos')
@@ -661,6 +895,7 @@ class BaseAsignadaController extends Controller
             ->when(!$esSupervisor, function ($q) use ($user) {
                 $q->where('base_asignadas.asesor_id', $user?->id);
             })
+            ->when($asesorFiltroId, fn ($q) => $q->where('base_asignadas.asesor_id', $asesorFiltroId))
             ->selectRaw("LOWER(TRIM(base_asignadas.origen)) as canal")
             ->selectRaw('count(*) as solicitudes_cierre')
             ->selectRaw('count(distinct gestions.base_asignada_id) as registros_unicos')
@@ -679,6 +914,7 @@ class BaseAsignadaController extends Controller
             ->when(!$esSupervisor, function ($q) use ($user) {
                 $q->where('cliente_potencials.asesor_id', $user?->id);
             })
+            ->when($asesorFiltroId, fn ($q) => $q->where('cliente_potencials.asesor_id', $asesorFiltroId))
             ->selectRaw("LOWER(TRIM(cliente_potencials.fuente)) as canal")
             ->selectRaw('count(*) as solicitudes_cierre')
             ->selectRaw('count(distinct gestions.cliente_potencial_id) as registros_unicos')
@@ -735,6 +971,7 @@ class BaseAsignadaController extends Controller
             $baseDesembolso = BaseAsignada::query()
                 ->where('estado_id', $cerradoId)
                 ->when(!$esSupervisor, fn ($q) => $q->where('asesor_id', $user?->id))
+                ->when($asesorFiltroId, fn ($q) => $q->where('asesor_id', $asesorFiltroId))
                 ->where(function ($q) use ($inicioMes, $finMes) {
                     $q->whereBetween('cierre_aprobado_at', [$inicioMes, $finMes])
                         ->orWhereBetween('cierre_solicitado_at', [$inicioMes, $finMes]);
@@ -747,6 +984,7 @@ class BaseAsignadaController extends Controller
             $clienteDesembolso = ClientePotencial::query()
                 ->where('estado_id', $cerradoId)
                 ->when(!$esSupervisor, fn ($q) => $q->where('asesor_id', $user?->id))
+                ->when($asesorFiltroId, fn ($q) => $q->where('asesor_id', $asesorFiltroId))
                 ->where(function ($q) use ($inicioMes, $finMes) {
                     $q->whereBetween('cierre_aprobado_at', [$inicioMes, $finMes])
                         ->orWhereBetween('cierre_solicitado_at', [$inicioMes, $finMes]);
@@ -777,6 +1015,7 @@ class BaseAsignadaController extends Controller
                 ->where('estado_id', $cerradoId)
                 ->where('efectivo', true)
                 ->when(!$esSupervisor, fn ($q) => $q->where('asesor_id', $user?->id))
+                ->when($asesorFiltroId, fn ($q) => $q->where('asesor_id', $asesorFiltroId))
                 ->where(function ($q) use ($inicioMes, $finMes) {
                     $q->whereBetween('cierre_aprobado_at', [$inicioMes, $finMes])
                         ->orWhereBetween('cierre_solicitado_at', [$inicioMes, $finMes]);
@@ -792,6 +1031,7 @@ class BaseAsignadaController extends Controller
                 ->where('estado_id', $cerradoId)
                 ->where('efectivo', true)
                 ->when(!$esSupervisor, fn ($q) => $q->where('asesor_id', $user?->id))
+                ->when($asesorFiltroId, fn ($q) => $q->where('asesor_id', $asesorFiltroId))
                 ->where(function ($q) use ($inicioMes, $finMes) {
                     $q->whereBetween('cierre_aprobado_at', [$inicioMes, $finMes])
                         ->orWhereBetween('cierre_solicitado_at', [$inicioMes, $finMes]);
@@ -825,14 +1065,45 @@ class BaseAsignadaController extends Controller
         $metasResumen = collect();
         $metaPersonal = null;
         $visitasPorPersona = collect();
+        $llamadasPorAsesor = collect();
         $vinculacionesPorUsuario = collect();
         $vinculacionLineasCredito = self::LINEAS_CREDITO;
+        $ahorrosEfectivosPorLinea = collect();
         $creditosLineaDesembolso = collect();
         $desembolsoEstadosCredito = self::ESTADOS_DESEMBOLSO;
+
+        $inicioMesLlamadas = Carbon::create($anio, $mes, 1)->startOfMonth();
+        $finMesLlamadas = (clone $inicioMesLlamadas)->endOfMonth();
+        $usuariosLlamadas = User::whereIn('role', $this->rolesGestores())
+            ->when(!$esSupervisor, fn ($q) => $q->where('id', $user?->id))
+            ->when($asesorFiltroId, fn ($q) => $q->where('id', $asesorFiltroId))
+            ->orderBy('name')
+            ->get();
+        $llamadasPorAsesor = $usuariosLlamadas->map(function ($usuario) use ($inicioMesLlamadas, $finMesLlamadas) {
+            $baseQuery = Gestion::query()
+                ->where('asesor_id', $usuario->id)
+                ->whereRaw("LOWER(TRIM(tipo)) = 'llamada'")
+                ->whereBetween('created_at', [$inicioMesLlamadas, $finMesLlamadas]);
+
+            $semana1 = (clone $baseQuery)->whereDay('created_at', '<=', 7)->count();
+            $semana2 = (clone $baseQuery)->whereDay('created_at', '>=', 8)->whereDay('created_at', '<=', 14)->count();
+            $semana3 = (clone $baseQuery)->whereDay('created_at', '>=', 15)->whereDay('created_at', '<=', 21)->count();
+            $semana4 = (clone $baseQuery)->whereDay('created_at', '>=', 22)->count();
+
+            return (object) [
+                'name' => $usuario->name,
+                'semana_1' => $semana1,
+                'semana_2' => $semana2,
+                'semana_3' => $semana3,
+                'semana_4' => $semana4,
+                'total' => $semana1 + $semana2 + $semana3 + $semana4,
+            ];
+        });
 
         if (Schema::hasTable('visitas')) {
             $usuariosVisitas = User::whereIn('role', $this->rolesGestores())
                 ->when(!$esSupervisor, fn ($q) => $q->where('id', $user?->id))
+                ->when($asesorFiltroId, fn ($q) => $q->where('id', $asesorFiltroId))
                 ->orderBy('name')
                 ->get();
 
@@ -861,6 +1132,7 @@ class BaseAsignadaController extends Controller
         if (Schema::hasColumns('gestions', ['es_vinculacion', 'es_ahorro', 'linea_credito_gestion'])) {
             $usuariosVinculaciones = User::whereIn('role', $this->rolesGestores())
                 ->when(!$esSupervisor, fn ($q) => $q->where('id', $user?->id))
+                ->when($asesorFiltroId, fn ($q) => $q->where('id', $asesorFiltroId))
                 ->orderBy('name')
                 ->get();
 
@@ -926,6 +1198,62 @@ class BaseAsignadaController extends Controller
                 ];
             });
 
+            if (Schema::hasColumns('gestions', ['linea_ahorro', 'monto_ahorro'])) {
+                $ahorrosBase = Gestion::query()
+                    ->where('gestions.es_ahorro', true)
+                    ->whereBetween('gestions.created_at', [$inicioMes, $finMes])
+                    ->whereNotNull('gestions.base_asignada_id')
+                    ->when(!$esSupervisor, fn ($q) => $q->where('gestions.asesor_id', $user?->id))
+                    ->when($asesorFiltroId, fn ($q) => $q->where('gestions.asesor_id', $asesorFiltroId))
+                    ->whereExists(function ($sub) use ($cerradoId) {
+                        $sub->selectRaw('1')
+                            ->from('base_asignadas')
+                            ->whereColumn('base_asignadas.id', 'gestions.base_asignada_id')
+                            ->where('base_asignadas.estado_id', $cerradoId)
+                            ->where('base_asignadas.efectivo', true);
+                    })
+                    ->get(['base_asignada_id', 'linea_ahorro', 'monto_ahorro'])
+                    ->map(function ($row) {
+                        $row->registro_key = 'base-' . $row->base_asignada_id;
+                        $row->linea_ahorro = trim((string) $row->linea_ahorro) ?: 'Sin linea';
+                        return $row;
+                    });
+
+                $ahorrosClientes = Gestion::query()
+                    ->where('gestions.es_ahorro', true)
+                    ->whereBetween('gestions.created_at', [$inicioMes, $finMes])
+                    ->whereNotNull('gestions.cliente_potencial_id')
+                    ->when(!$esSupervisor, fn ($q) => $q->where('gestions.asesor_id', $user?->id))
+                    ->when($asesorFiltroId, fn ($q) => $q->where('gestions.asesor_id', $asesorFiltroId))
+                    ->whereExists(function ($sub) use ($cerradoId) {
+                        $sub->selectRaw('1')
+                            ->from('cliente_potencials')
+                            ->whereColumn('cliente_potencials.id', 'gestions.cliente_potencial_id')
+                            ->where('cliente_potencials.estado_id', $cerradoId)
+                            ->where('cliente_potencials.efectivo', true);
+                    })
+                    ->get(['cliente_potencial_id', 'linea_ahorro', 'monto_ahorro'])
+                    ->map(function ($row) {
+                        $row->registro_key = 'cliente-' . $row->cliente_potencial_id;
+                        $row->linea_ahorro = trim((string) $row->linea_ahorro) ?: 'Sin linea';
+                        return $row;
+                    });
+
+                $ahorrosEfectivosPorLinea = $ahorrosBase
+                    ->concat($ahorrosClientes)
+                    ->unique('registro_key')
+                    ->groupBy('linea_ahorro')
+                    ->map(function ($rows, $linea) {
+                        return (object) [
+                            'linea_ahorro' => $linea,
+                            'total' => (int) $rows->count(),
+                            'monto' => (float) $rows->sum('monto_ahorro'),
+                        ];
+                    })
+                    ->sortByDesc('monto')
+                    ->values();
+            }
+
             if (Schema::hasColumn('base_asignadas', 'desembolso_estado') && Schema::hasColumn('cliente_potencials', 'desembolso_estado')) {
                 $periodoCredito = function ($q, string $tabla) use ($inicioMes, $finMes) {
                     $q->whereBetween("{$tabla}.cierre_solicitado_at", [$inicioMes, $finMes])
@@ -944,6 +1272,7 @@ class BaseAsignadaController extends Controller
                         $periodoCredito($q, 'base_asignadas');
                     })
                     ->when(!$esSupervisor, fn ($q) => $q->where('asesor_id', $user?->id))
+                    ->when($asesorFiltroId, fn ($q) => $q->where('asesor_id', $asesorFiltroId))
                     ->selectRaw("COALESCE(NULLIF(linea_credito, ''), 'Sin linea') as linea_credito")
                     ->selectRaw("COALESCE(NULLIF(desembolso_estado, ''), 'Sin estado desembolso') as desembolso_estado");
 
@@ -962,6 +1291,7 @@ class BaseAsignadaController extends Controller
                         $periodoCredito($q, 'cliente_potencials');
                     })
                     ->when(!$esSupervisor, fn ($q) => $q->where('asesor_id', $user?->id))
+                    ->when($asesorFiltroId, fn ($q) => $q->where('asesor_id', $asesorFiltroId))
                     ->selectRaw("COALESCE(NULLIF(linea_credito, ''), 'Sin linea') as linea_credito")
                     ->selectRaw("COALESCE(NULLIF(desembolso_estado, ''), 'Sin estado desembolso') as desembolso_estado");
 
@@ -1001,6 +1331,7 @@ class BaseAsignadaController extends Controller
 
         if ($esSupervisor) {
             $comercialesResumen = User::whereIn('role', $this->rolesGestores())
+                ->when($asesorFiltroId, fn ($q) => $q->where('id', $asesorFiltroId))
                 ->withCount([
                     'basesAsignadas as total_registros' => function ($q) use ($inicioMes, $finMes) {
                         $q->whereBetween('base_asignadas.created_at', [$inicioMes, $finMes]);
@@ -1073,8 +1404,7 @@ class BaseAsignadaController extends Controller
                         ->sum('monto_solicitado');
                     $porcentajeCierreVsAsignados = $asignadosMes > 0 ? round(($cierresMes / $asignadosMes) * 100, 1) : 0;
                     $tiempoInvertidoMinMes = (int) Gestion::query()
-                        ->join('base_asignadas', 'base_asignadas.id', '=', 'gestions.base_asignada_id')
-                        ->where('base_asignadas.asesor_id', $comercial->id)
+                        ->where('asesor_id', $comercial->id)
                         ->whereBetween('gestions.created_at', [$inicioMes, $finMes])
                         ->sum('gestions.minutos_invertidos');
                     $promTiempoCierreMin = 0;
@@ -1100,8 +1430,27 @@ class BaseAsignadaController extends Controller
                     $comercial->monto_desembolsado_mes = $montoDesembolsadoMes;
                     $comercial->desembolsos_mes = $desembolsosMes;
                     $comercial->monto_solicitado_mes = $montoSolicitadoMes;
+                    $comercial->total_llamadas_mes = (int) Gestion::query()
+                        ->where('asesor_id', $comercial->id)
+                        ->whereRaw("LOWER(TRIM(tipo)) = 'llamada'")
+                        ->whereBetween('created_at', [$inicioMes, $finMes])
+                        ->count();
+                    $resumenAhorros = $this->resumenAhorrosUsuario((int) $comercial->id, $inicioMes, $finMes, $cerradoId);
+                    $comercial->ahorros_mes = $resumenAhorros['cantidad'];
+                    $comercial->monto_ahorros_mes = $resumenAhorros['monto'];
                     $comercial->tiempo_invertido_min_mes = $tiempoInvertidoMinMes;
                     $comercial->prom_tiempo_cierre_min = $promTiempoCierreMin;
+                    $conteosDesembolso = $this->conteosDesembolsoUsuario((int) $comercial->id, $inicioMes, $finMes, $cerradoId);
+                    $comercial->desembolso_desembolsado_mes = $conteosDesembolso['desembolsado'];
+                    $comercial->desembolso_por_desembolsar_mes = $conteosDesembolso['por_desembolsar'];
+                    $comercial->desembolso_aplazado_mes = $conteosDesembolso['aplazado'];
+                    $comercial->desembolso_negado_mes = $conteosDesembolso['negado'];
+                    $comercial->desembolso_desistido_mes = $conteosDesembolso['desistido'];
+                    $comercial->monto_desembolso_desembolsado_mes = $conteosDesembolso['monto_desembolsado'];
+                    $comercial->monto_desembolso_por_desembolsar_mes = $conteosDesembolso['monto_por_desembolsar'];
+                    $comercial->monto_desembolso_aplazado_mes = $conteosDesembolso['monto_aplazado'];
+                    $comercial->monto_desembolso_negado_mes = $conteosDesembolso['monto_negado'];
+                    $comercial->monto_desembolso_desistido_mes = $conteosDesembolso['monto_desistido'];
                     $comercial->efectivo_si_mes = (int) BaseAsignada::query()
                         ->where('asesor_id', $comercial->id)
                         ->where('estado_id', $cerradoId)
@@ -1173,6 +1522,7 @@ class BaseAsignadaController extends Controller
                 });
 
             $acumuladoPorUsuario = User::whereIn('role', $this->rolesGestores())
+                ->when($asesorFiltroId, fn ($q) => $q->where('id', $asesorFiltroId))
                 ->orderBy('name')
                 ->get()
                 ->map(function ($usuario) use ($cerradoId, $pendienteId) {
@@ -1274,6 +1624,8 @@ class BaseAsignadaController extends Controller
 
         return view('dashboard.index', compact(
             'esSupervisor',
+            'asesoresFiltro',
+            'asesorFiltroId',
             'totalBases',
             'gestionadas',
             'pendientesAprobacion',
@@ -1292,8 +1644,10 @@ class BaseAsignadaController extends Controller
             'metasResumen',
             'metaPersonal',
             'visitasPorPersona',
+            'llamadasPorAsesor',
             'vinculacionesPorUsuario',
             'vinculacionLineasCredito',
+            'ahorrosEfectivosPorLinea',
             'creditosLineaDesembolso',
             'desembolsoEstadosCredito',
             
@@ -1603,6 +1957,14 @@ class BaseAsignadaController extends Controller
         $periodoActualTitulo = $periodo === 'anio'
             ? (string) $anio
             : $inicioMes->locale('es')->translatedFormat('F Y');
+        $asesorFiltroId = null;
+        if ($esSupervisor && $request->filled('asesor_id')) {
+            $asesorIdRequest = (int) $request->input('asesor_id');
+            $asesorExiste = User::whereIn('role', $this->rolesGestores())->where('id', $asesorIdRequest)->exists();
+            if ($asesorExiste) {
+                $asesorFiltroId = $asesorIdRequest;
+            }
+        }
         $cerradoId = Estado::where('slug', 'cerrado')->value('id');
         $pendienteId = Estado::where('slug', 'pendiente-aprobacion-supervisor')->value('id');
         $devueltaId = Estado::where('slug', 'devuelta')->value('id');
@@ -1622,6 +1984,8 @@ class BaseAsignadaController extends Controller
             ->selectRaw('base_asignadas.created_at as fecha_ref');
         if (!$esSupervisor) {
             $baseQ->where('base_asignadas.asesor_id', $user?->id);
+        } elseif ($asesorFiltroId) {
+            $baseQ->where('base_asignadas.asesor_id', $asesorFiltroId);
         }
 
         $clienteQ = DB::table('cliente_potencials')
@@ -1639,6 +2003,8 @@ class BaseAsignadaController extends Controller
             ->selectRaw('cliente_potencials.created_at as fecha_ref');
         if (!$esSupervisor) {
             $clienteQ->where('cliente_potencials.asesor_id', $user?->id);
+        } elseif ($asesorFiltroId) {
+            $clienteQ->where('cliente_potencials.asesor_id', $asesorFiltroId);
         }
 
         if ($tipo === 'cargados') {
@@ -1891,10 +2257,10 @@ class BaseAsignadaController extends Controller
             ? 'SI'
             : 'N/A';
         $productoCierre = 'N/A';
-        if ($solicitudCierre?->es_vinculacion) {
-            $productoCierre = $solicitudCierre->es_ahorro
-                ? 'Ahorro'
-                : 'Credito: ' . ($solicitudCierre->linea_credito_gestion ?: 'Sin linea');
+        if ($solicitudCierre?->es_ahorro) {
+            $productoCierre = 'Ahorro: ' . ($solicitudCierre->linea_ahorro ?: 'Sin linea') . ' - $' . number_format((float) ($solicitudCierre->monto_ahorro ?? 0), 0, ',', '.');
+        } elseif ($solicitudCierre?->es_vinculacion) {
+            $productoCierre = 'Credito: ' . ($solicitudCierre->linea_credito_gestion ?: 'Sin linea');
         }
         return view('base_asignadas.show', compact('base', 'gestiones', 'historicoCedula', 'estados', 'lineasCredito', 'desembolsoEstados', 'tiempoInvertidoRegistroMin', 'vinculacionCierre', 'productoCierre'));
     }
@@ -2243,6 +2609,7 @@ class BaseAsignadaController extends Controller
             'desembolso_estado' => ['required', 'in:' . implode(',', self::ESTADOS_DESEMBOLSO)],
             'detalle' => ['nullable', 'string', 'max:2000'],
         ]);
+        $esDesembolsado = strtolower(trim($data['desembolso_estado'])) === 'desembolsado';
 
         if ($this->isSupervisor()) {
             $base->update([
@@ -2250,7 +2617,7 @@ class BaseAsignadaController extends Controller
                 'desembolso_estado_pendiente' => null,
                 'desembolso_solicitado_at' => null,
                 'desembolso_solicitado_por' => null,
-                'desembolso_aprobado_at' => now(),
+                'desembolso_aprobado_at' => $esDesembolsado ? now() : null,
                 'desembolso_motivo_devolucion' => null,
                 'ultima_gestion_at' => now(),
             ]);
@@ -2261,6 +2628,28 @@ class BaseAsignadaController extends Controller
                 'base_asignada_id' => $base->id,
                 'tipo' => 'desembolso_supervisor',
                 'detalle' => trim('Supervisor actualizo estado desembolso a: ' . $data['desembolso_estado'] . '. ' . ($data['detalle'] ?? '')),
+            ]);
+
+            return back()->with('ok', 'Estado de desembolso actualizado.');
+        }
+
+        if (!$esDesembolsado) {
+            $base->update([
+                'desembolso_estado' => $data['desembolso_estado'],
+                'desembolso_estado_pendiente' => null,
+                'desembolso_solicitado_at' => null,
+                'desembolso_solicitado_por' => null,
+                'desembolso_aprobado_at' => null,
+                'desembolso_motivo_devolucion' => null,
+                'ultima_gestion_at' => now(),
+            ]);
+
+            Gestion::create([
+                'asesor_id' => auth()->id(),
+                'estado_id' => $base->estado_id,
+                'base_asignada_id' => $base->id,
+                'tipo' => 'desembolso_directo',
+                'detalle' => trim('Cambio directo de desembolso a: ' . $data['desembolso_estado'] . '. ' . ($data['detalle'] ?? '')),
             ]);
 
             return back()->with('ok', 'Estado de desembolso actualizado.');

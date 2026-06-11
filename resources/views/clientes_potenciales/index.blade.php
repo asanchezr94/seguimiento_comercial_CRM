@@ -19,6 +19,24 @@
             @endforeach
         </select>
     </div>
+    <div class="field">
+        <label>Mes carga</label>
+        <select name="mes">
+            <option value="">Todos</option>
+            @for($m = 1; $m <= 12; $m++)
+                <option value="{{ $m }}" @selected((string) request('mes') === (string) $m)>{{ str_pad((string) $m, 2, '0', STR_PAD_LEFT) }}</option>
+            @endfor
+        </select>
+    </div>
+    <div class="field">
+        <label>Ano carga</label>
+        <select name="anio">
+            <option value="">Todos</option>
+            @for($year = 2026; $year <= 2036; $year++)
+                <option value="{{ $year }}" @selected((string) request('anio') === (string) $year)>{{ $year }}</option>
+            @endfor
+        </select>
+    </div>
     <button type="submit">Filtrar</button>
     <a href="{{ route('clientes-potenciales.index') }}">Limpiar</a>
 </form>

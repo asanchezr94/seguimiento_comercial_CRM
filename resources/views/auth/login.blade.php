@@ -126,6 +126,12 @@
             border-radius: 8px;
             padding: 10px;
             border: 1px solid #f5b2b2;
+            font-size: 14px;
+            line-height: 1.35;
+        }
+        .err strong {
+            display: block;
+            margin-bottom: 2px;
         }
         .pulse {
             position: absolute;
@@ -170,7 +176,10 @@
             <button type="submit">Ingresar</button>
 
             @if($errors->any())
-                <div class="err">{{ $errors->first() }}</div>
+                <div class="err">
+                    <strong>No pudimos iniciar sesion</strong>
+                    {{ $errors->first() }}
+                </div>
             @endif
         </form>
     </div>

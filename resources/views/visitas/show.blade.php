@@ -29,7 +29,10 @@
             <th>Titulo / motivo</th><td colspan="3">{{ $visita->titulo ?? 'N/A' }}</td>
         </tr>
         <tr>
-            <th>Observaciones / resultado</th><td colspan="3">{{ $visita->resultado ?? 'Sin observaciones registradas.' }}</td>
+            <th>Detalle inicial</th><td colspan="3">{{ $visita->detalle_inicial ?? 'Sin detalle inicial.' }}</td>
+        </tr>
+        <tr>
+            <th>Resultado / observacion final</th><td colspan="3">{{ $visita->resultado ?? 'Sin resultado registrado.' }}</td>
         </tr>
     </tbody>
 </table>
@@ -43,7 +46,7 @@
             <option value="realizada">Realizada</option>
             <option value="cancelada">Cancelada</option>
         </select>
-        <label>Resultado de la visita</label>
+        <label>Resultado / observacion final</label>
         <textarea name="resultado" required placeholder="Describe que se hizo en la visita..."></textarea>
         <button type="submit">Guardar resultado</button>
     </form>

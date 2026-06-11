@@ -18,7 +18,10 @@ class Gestion extends Model
         'minutos_invertidos',
         'es_vinculacion',
         'es_ahorro',
+        'es_asesoria_comercial',
         'linea_credito_gestion',
+        'linea_ahorro',
+        'monto_ahorro',
     ];
 
     protected function casts(): array
@@ -28,6 +31,8 @@ class Gestion extends Model
             'minutos_invertidos' => 'integer',
             'es_vinculacion' => 'boolean',
             'es_ahorro' => 'boolean',
+            'es_asesoria_comercial' => 'boolean',
+            'monto_ahorro' => 'decimal:2',
         ];
     }
 

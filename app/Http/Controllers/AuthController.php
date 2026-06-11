@@ -17,10 +17,16 @@ class AuthController extends Controller
         $credentials = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
+        ], [
+            'email.required' => 'Ingresa tu correo.',
+            'email.email' => 'Ingresa un correo valido.',
+            'password.required' => 'Ingresa tu contrasena.',
         ]);
 
         if (!Auth::attempt($credentials, $request->boolean('remember'))) {
-            return back()->withErrors(['email' => 'Credenciales invalidas.'])->onlyInput('email');
+            return back()
+                ->withErrors(['login' => 'Usuario o contrasena incorrectos. Verifica los datos e intenta nuevamente.'])
+                ->onlyInput('email');
         }
 
         $request->session()->regenerate();

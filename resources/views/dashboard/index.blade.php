@@ -33,6 +33,17 @@
                 @endfor
             </select>
         </div>
+        @if($esSupervisor)
+            <div class="field">
+                <label>Asesor</label>
+                <select name="asesor_id" onchange="document.getElementById('filtro-periodo').submit()">
+                    <option value="">Todos</option>
+                    @foreach($asesoresFiltro as $asesorFiltro)
+                        <option value="{{ $asesorFiltro->id }}" @selected((int) $asesorFiltroId === (int) $asesorFiltro->id)>{{ $asesorFiltro->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+        @endif
         <button type="button" id="btn-limpiar"><a href="{{ route('dashboard') }}">Limpiar</a></button>
         <button type="button" id="btn-descargar-dashboard">Descargar reporte Excel</button>
     </form>
@@ -112,17 +123,22 @@
     <tbody>
         <tr>
             <td>Registros cargados</td>
-            <td><a href="{{ route('dashboard.detalle', ['tipo' => 'cargados', 'mes' => $mes, 'anio' => $anio, 'periodo' => $periodo]) }}">{{ number_format((int) $kpiMesActual['registros_cargados'], 0, ',', '.') }}</a></td>
+            <td><a href="{{ route('dashboard.detalle', ['tipo' => 'cargados', 'mes' => $mes, 'anio' => $anio, 'periodo' => $periodo, 'asesor_id' => $asesorFiltroId]) }}">{{ number_format((int) $kpiMesActual['registros_cargados'], 0, ',', '.') }}</a></td>
             <td>{{ number_format((int) $kpiMesAnterior['registros_cargados'], 0, ',', '.') }}</td>
         </tr>
         <tr>
             <td>Gestion {{ $periodo === 'anio' ? 'anual' : 'mensual' }}</td>
-            <td>{{ number_format((float) $kpiMesActual['porcentaje_gestion'], 1) }}% (<a href="{{ route('dashboard.detalle', ['tipo' => 'gestionados', 'mes' => $mes, 'anio' => $anio, 'periodo' => $periodo]) }}">{{ number_format((int) $kpiMesActual['registros_gestionados'], 0, ',', '.') }}</a> regs)</td>
+            <td>{{ number_format((float) $kpiMesActual['porcentaje_gestion'], 1) }}% (<a href="{{ route('dashboard.detalle', ['tipo' => 'gestionados', 'mes' => $mes, 'anio' => $anio, 'periodo' => $periodo, 'asesor_id' => $asesorFiltroId]) }}">{{ number_format((int) $kpiMesActual['registros_gestionados'], 0, ',', '.') }}</a> regs)</td>
             <td>{{ number_format((float) $kpiMesAnterior['porcentaje_gestion'], 1) }}% ({{ number_format((int) $kpiMesAnterior['registros_gestionados'], 0, ',', '.') }} regs)</td>
         </tr>
         <tr>
+            <td>Total llamadas</td>
+            <td>{{ number_format((int) ($kpiMesActual['total_llamadas'] ?? 0), 0, ',', '.') }}</td>
+            <td>{{ number_format((int) ($kpiMesAnterior['total_llamadas'] ?? 0), 0, ',', '.') }}</td>
+        </tr>
+        <tr>
             <td>Cierre {{ $periodo === 'anio' ? 'anual' : 'mensual' }}</td>
-            <td>{{ number_format((float) $kpiMesActual['porcentaje_cierre'], 1) }}% (<a href="{{ route('dashboard.detalle', ['tipo' => 'cerrados', 'mes' => $mes, 'anio' => $anio, 'periodo' => $periodo]) }}">{{ number_format((int) $kpiMesActual['cierres'], 0, ',', '.') }}</a> cierres)</td>
+            <td>{{ number_format((float) $kpiMesActual['porcentaje_cierre'], 1) }}% (<a href="{{ route('dashboard.detalle', ['tipo' => 'cerrados', 'mes' => $mes, 'anio' => $anio, 'periodo' => $periodo, 'asesor_id' => $asesorFiltroId]) }}">{{ number_format((int) $kpiMesActual['cierres'], 0, ',', '.') }}</a> cierres)</td>
             <td>{{ number_format((float) $kpiMesAnterior['porcentaje_cierre'], 1) }}% ({{ number_format((int) $kpiMesAnterior['cierres'], 0, ',', '.') }} cierres)</td>
         </tr>
         <tr>
@@ -165,6 +181,16 @@
             <td>Cantidad de vinculaciones</td>
             <td>{{ number_format((int) ($kpiMesActual['vinculaciones'] ?? 0), 0, ',', '.') }}</td>
             <td>{{ number_format((int) ($kpiMesAnterior['vinculaciones'] ?? 0), 0, ',', '.') }}</td>
+        </tr>
+        <tr>
+            <td>Ahorros colocados</td>
+            <td>{{ number_format((int) ($kpiMesActual['ahorros'] ?? 0), 0, ',', '.') }}</td>
+            <td>{{ number_format((int) ($kpiMesAnterior['ahorros'] ?? 0), 0, ',', '.') }}</td>
+        </tr>
+        <tr>
+            <td>Monto ahorros</td>
+            <td>${{ number_format((float) ($kpiMesActual['monto_ahorros'] ?? 0), 0, ',', '.') }}</td>
+            <td>${{ number_format((float) ($kpiMesAnterior['monto_ahorros'] ?? 0), 0, ',', '.') }}</td>
         </tr>
         <tr>
             <td>% desembolsos vs cierres efectivos</td>
@@ -215,6 +241,28 @@
     </tbody>
 </table>
 
+<h3>Ahorros efectivos por linea ({{ $periodoTexto }})</h3>
+<table data-no-global-filters>
+    <thead>
+        <tr>
+            <th>Linea de ahorro</th>
+            <th>Ahorros efectivos</th>
+            <th>Monto ahorros</th>
+        </tr>
+    </thead>
+    <tbody>
+        @forelse($ahorrosEfectivosPorLinea as $ahorroLinea)
+            <tr>
+                <td>{{ $ahorroLinea->linea_ahorro }}</td>
+                <td>{{ number_format((int) $ahorroLinea->total, 0, ',', '.') }}</td>
+                <td>${{ number_format((float) $ahorroLinea->monto, 0, ',', '.') }}</td>
+            </tr>
+        @empty
+            <tr><td colspan="3">Sin ahorros efectivos en el periodo seleccionado.</td></tr>
+        @endforelse
+    </tbody>
+</table>
+
 <h3>Creditos por linea y estado de desembolso ({{ $periodoTexto }})</h3>
 <table data-no-global-filters>
     <thead>
@@ -243,34 +291,7 @@
     </tbody>
 </table>
 
-<h3>Estados de desembolso vs cierres ({{ $periodoTexto }})</h3>
-<table data-no-global-filters>
-    <thead>
-        <tr>
-            <th>Estado desembolso</th>
-            <th>Cerrados efectivos</th>
-            <th>Cerrados no efectivos</th>
-            <th>Total cerrados</th>
-            <th>% efectivos</th>
-            <th>% no efectivos</th>
-        </tr>
-    </thead>
-    <tbody>
-        @forelse($desembolsoResumen as $desembolso)
-            @php($totalDesembolso = (int) $desembolso->total)
-            <tr>
-                <td>{{ ucfirst($desembolso->desembolso_estado) }}</td>
-                <td>{{ number_format((int) $desembolso->efectivos, 0, ',', '.') }}</td>
-                <td>{{ number_format((int) $desembolso->no_efectivos, 0, ',', '.') }}</td>
-                <td>{{ number_format($totalDesembolso, 0, ',', '.') }}</td>
-                <td>{{ $totalDesembolso > 0 ? number_format(round(((int)$desembolso->efectivos / $totalDesembolso) * 100, 1), 1) : '0.0' }}%</td>
-                <td>{{ $totalDesembolso > 0 ? number_format(round(((int)$desembolso->no_efectivos / $totalDesembolso) * 100, 1), 1) : '0.0' }}%</td>
-            </tr>
-        @empty
-            <tr><td colspan="6">Sin cierres con estado de desembolso en el periodo seleccionado.</td></tr>
-        @endforelse
-    </tbody>
-</table>
+{{-- Tabla oculta temporalmente: Estados de desembolso vs cierres --}}
 
 <h3>Cierres efectivos vs estados de desembolso ({{ $periodoTexto }})</h3>
 <table data-no-global-filters>
@@ -352,37 +373,41 @@
     </tbody>
 </table>
 
-<h3>Indicadores por canal ({{ $periodoTexto }})</h3>
+<h3>Llamadas por asesor (mes seleccionado)</h3>
 <table data-no-global-filters>
     <thead>
         <tr>
-            <th>Canal</th>
-            <th>Gestiones</th>
-            <th>Registros unicos gestionados</th>
-            <th>% sobre gestiones del periodo</th>
+            <th>Asesor</th>
+            <th>Total llamadas</th>
+            <th>Semana 1</th>
+            <th>Semana 2</th>
+            <th>Semana 3</th>
+            <th>Semana 4</th>
         </tr>
     </thead>
     <tbody>
-        @php($totalCanalesMes = (int) $canalesMes->sum('total_gestiones'))
-        @forelse($canalesMes as $canal)
-            @php($porcCanal = $totalCanalesMes > 0 ? round(((int)$canal->total_gestiones / $totalCanalesMes) * 100, 1) : 0)
+        @forelse($llamadasPorAsesor as $llamadaResumen)
             <tr>
-                <td>{{ ucfirst($canal->canal ?: 'sin canal') }}</td>
-                <td>{{ number_format((int) $canal->total_gestiones, 0, ',', '.') }}</td>
-                <td>{{ number_format((int) $canal->registros_unicos, 0, ',', '.') }}</td>
-                <td>{{ number_format((float) $porcCanal, 1) }}%</td>
+                <td>{{ $llamadaResumen->name }}</td>
+                <td>{{ number_format((int) $llamadaResumen->total, 0, ',', '.') }}</td>
+                <td>{{ number_format((int) $llamadaResumen->semana_1, 0, ',', '.') }}</td>
+                <td>{{ number_format((int) $llamadaResumen->semana_2, 0, ',', '.') }}</td>
+                <td>{{ number_format((int) $llamadaResumen->semana_3, 0, ',', '.') }}</td>
+                <td>{{ number_format((int) $llamadaResumen->semana_4, 0, ',', '.') }}</td>
             </tr>
         @empty
-            <tr><td colspan="4">Sin gestiones en el periodo seleccionado.</td></tr>
+            <tr><td colspan="6">Sin llamadas en el mes seleccionado.</td></tr>
         @endforelse
     </tbody>
 </table>
 
-<h3>Cierres por canal ({{ $periodoTexto }})</h3>
+{{-- Tabla oculta temporalmente: Indicadores por canal --}}
+
+<h3>Cierres por origen ({{ $periodoTexto }})</h3>
 <table data-no-global-filters>
     <thead>
         <tr>
-            <th>Canal</th>
+            <th>Origen</th>
             <th>Solicitudes de cierre</th>
             <th>Registros unicos</th>
             <th>Cierres aprobados</th>
@@ -453,7 +478,7 @@
                 <label>Asesor</label>
                 <select name="user_id" required>
                     <option value="">Seleccione</option>
-                    @foreach($comercialesResumen as $asesorMeta)
+                    @foreach($asesoresFiltro as $asesorMeta)
                         <option value="{{ $asesorMeta->id }}">{{ $asesorMeta->name }}</option>
                     @endforeach
                 </select>
@@ -525,12 +550,23 @@
             <th>Efectivo NO</th>
             <th>% efectivo SI</th>
             <th>% no efectivo</th>
+            <th>Total llamadas</th>
+            <th>Ahorros</th>
+            <th>Monto ahorros</th>
             <th>Monto solicitado {{ $periodo === 'anio' ? 'año' : 'mes' }}</th>
             <th>Tiempo invertido {{ $periodo === 'anio' ? 'año' : 'mes' }}</th>
             <th>Promedio tiempo a cierre</th>
             <th>Monto colocado {{ $periodo === 'anio' ? 'año' : 'mes' }}</th>
             <th>Desembolsos {{ $periodo === 'anio' ? 'año' : 'mes' }}</th>
             <th>Monto desembolsado {{ $periodo === 'anio' ? 'año' : 'mes' }}</th>
+            <th>Por desembolsar</th>
+            <th>Monto por desembolsar</th>
+            <th>Aplazado</th>
+            <th>Monto aplazado</th>
+            <th>Negado</th>
+            <th>Monto negado</th>
+            <th>Desistido</th>
+            <th>Monto desistido</th>
         </tr>
     </thead>
     <tbody>
@@ -554,15 +590,26 @@
                 @php($porcEfNoCom = (int)$comercial->cierres_mes > 0 ? round(((int)$comercial->efectivo_no_mes / (int)$comercial->cierres_mes) * 100, 1) : 0)
                 <td>{{ number_format((float)$porcEfSiCom, 1) }}%</td>
                 <td>{{ number_format((float)$porcEfNoCom, 1) }}%</td>
+                <td>{{ number_format((int) ($comercial->total_llamadas_mes ?? 0), 0, ',', '.') }}</td>
+                <td>{{ number_format((int) ($comercial->ahorros_mes ?? 0), 0, ',', '.') }}</td>
+                <td>${{ number_format((float) ($comercial->monto_ahorros_mes ?? 0), 0, ',', '.') }}</td>
                 <td>${{ number_format((float)$comercial->monto_solicitado_mes, 0, ',', '.') }}</td>
                 <td>{{ number_format((int)$comercial->tiempo_invertido_min_mes, 0, ',', '.') }} min ({{ $tiempoMesH }}h {{ $tiempoMesM }}m)</td>
                 <td>{{ (int)$comercial->prom_tiempo_cierre_min > 0 ? ($promCierreH . 'h ' . $promCierreM . 'm') : 'N/A' }}</td>
                 <td>${{ number_format((float) $comercial->monto_colocado_mes, 0, ',', '.') }}</td>
-                <td>{{ number_format((int) ($comercial->desembolsos_mes ?? 0), 0, ',', '.') }}</td>
+                <td>{{ number_format((int) ($comercial->desembolso_desembolsado_mes ?? $comercial->desembolsos_mes ?? 0), 0, ',', '.') }}</td>
                 <td>${{ number_format((float) $comercial->monto_desembolsado_mes, 0, ',', '.') }}</td>
+                <td>{{ number_format((int) ($comercial->desembolso_por_desembolsar_mes ?? 0), 0, ',', '.') }}</td>
+                <td>${{ number_format((float) ($comercial->monto_desembolso_por_desembolsar_mes ?? 0), 0, ',', '.') }}</td>
+                <td>{{ number_format((int) ($comercial->desembolso_aplazado_mes ?? 0), 0, ',', '.') }}</td>
+                <td>${{ number_format((float) ($comercial->monto_desembolso_aplazado_mes ?? 0), 0, ',', '.') }}</td>
+                <td>{{ number_format((int) ($comercial->desembolso_negado_mes ?? 0), 0, ',', '.') }}</td>
+                <td>${{ number_format((float) ($comercial->monto_desembolso_negado_mes ?? 0), 0, ',', '.') }}</td>
+                <td>{{ number_format((int) ($comercial->desembolso_desistido_mes ?? 0), 0, ',', '.') }}</td>
+                <td>${{ number_format((float) ($comercial->monto_desembolso_desistido_mes ?? 0), 0, ',', '.') }}</td>
             </tr>
         @empty
-            <tr><td colspan="17">Sin comerciales.</td></tr>
+            <tr><td colspan="28">Sin comerciales.</td></tr>
         @endforelse
     </tbody>
 </table>
@@ -644,9 +691,9 @@
             @php($porcNoEfHist = (int)$cerradas > 0 ? round(((int)$cerradasNoEfectivas / (int)$cerradas) * 100, 1) : 0)
             <td>{{ number_format((float) $porcEfHist, 1) }}%</td>
             <td>{{ number_format((float) $porcNoEfHist, 1) }}%</td>
-            <td><a href="{{ route('dashboard.detalle', ['tipo' => 'no_efectivos', 'mes' => $mes, 'anio' => $anio, 'periodo' => $periodo]) }}">{{ number_format((int) $cerradasNoEfectivas, 0, ',', '.') }}</a></td>
-            <td><a href="{{ route('dashboard.detalle', ['tipo' => 'pendientes', 'mes' => $mes, 'anio' => $anio, 'periodo' => $periodo]) }}">{{ number_format((int) $pendientesAprobacion, 0, ',', '.') }}</a></td>
-            <td><a href="{{ route('dashboard.detalle', ['tipo' => 'devueltas', 'mes' => $mes, 'anio' => $anio, 'periodo' => $periodo]) }}">{{ number_format((int) $devueltas, 0, ',', '.') }}</a></td>
+            <td><a href="{{ route('dashboard.detalle', ['tipo' => 'no_efectivos', 'mes' => $mes, 'anio' => $anio, 'periodo' => $periodo, 'asesor_id' => $asesorFiltroId]) }}">{{ number_format((int) $cerradasNoEfectivas, 0, ',', '.') }}</a></td>
+            <td><a href="{{ route('dashboard.detalle', ['tipo' => 'pendientes', 'mes' => $mes, 'anio' => $anio, 'periodo' => $periodo, 'asesor_id' => $asesorFiltroId]) }}">{{ number_format((int) $pendientesAprobacion, 0, ',', '.') }}</a></td>
+            <td><a href="{{ route('dashboard.detalle', ['tipo' => 'devueltas', 'mes' => $mes, 'anio' => $anio, 'periodo' => $periodo, 'asesor_id' => $asesorFiltroId]) }}">{{ number_format((int) $devueltas, 0, ',', '.') }}</a></td>
             <td>${{ number_format((float) $montoCerrado, 0, ',', '.') }}</td>
             <td>${{ number_format((float) $montoDesembolsado, 0, ',', '.') }}</td>
         </tr>
@@ -655,7 +702,7 @@
 
 @if($esSupervisor)
 <h3>Embudo por estado</h3>
-<table>
+<table data-no-global-filters>
     <thead>
         <tr>
             <th>Estado</th>
@@ -769,4 +816,3 @@
 </script>
 @endpush
 @endsection
-

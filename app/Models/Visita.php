@@ -13,6 +13,7 @@ class Visita extends Model
         'cliente_nombre',
         'telefono',
         'direccion',
+        'detalle_inicial',
         'programada_at',
         'finaliza_at',
         'estado',

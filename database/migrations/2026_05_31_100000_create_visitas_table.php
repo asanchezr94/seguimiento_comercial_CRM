@@ -15,10 +15,11 @@ return new class extends Migration
             $table->string('cliente_nombre');
             $table->string('telefono', 50)->nullable();
             $table->string('direccion')->nullable();
-            $table->timestamp('programada_at');
+            $table->text('detalle_inicial')->nullable();
+            $table->dateTime('programada_at');
             $table->string('estado', 30)->default('programada');
             $table->text('resultado')->nullable();
-            $table->timestamp('registrada_at')->nullable();
+            $table->dateTime('registrada_at')->nullable();
             $table->timestamps();
         });
     }
@@ -28,4 +29,3 @@ return new class extends Migration
         Schema::dropIfExists('visitas');
     }
 };
-

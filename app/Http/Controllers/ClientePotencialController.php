@@ -7,6 +7,7 @@ use App\Models\Estado;
 use App\Models\Gestion;
 use App\Models\AppNotification;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -36,9 +37,8 @@ class ClientePotencialController extends Controller
         'Por desembolsar',
         'desembolsado',
         'aplazado',
-        'negados',
+        'negado',
         'desistido',
-        'pendiente de radicar',
     ];
 
     private function isSupervisor(): bool
@@ -94,6 +94,21 @@ class ClientePotencialController extends Controller
                 $sub->where('nombre', 'like', "%{$q}%")
                     ->orWhere('telefono', 'like', "%{$q}%");
             });
+        }
+        if (request()->filled('mes')) {
+            $mesFiltro = max(1, min(12, (int) request('mes')));
+            $anioFiltro = request()->filled('anio')
+                ? max(2026, min(2036, (int) request('anio')))
+                : (int) now()->year;
+            $inicioFiltro = Carbon::create($anioFiltro, $mesFiltro, 1)->startOfMonth();
+            $finFiltro = (clone $inicioFiltro)->endOfMonth();
+            $query->whereBetween('created_at', [$inicioFiltro, $finFiltro]);
+        } elseif (request()->filled('anio')) {
+            $anioFiltro = max(2026, min(2036, (int) request('anio')));
+            $query->whereBetween('created_at', [
+                Carbon::create($anioFiltro, 1, 1)->startOfYear(),
+                Carbon::create($anioFiltro, 12, 31)->endOfYear(),
+            ]);
         }
         $clientes = $query->paginate(10)->withQueryString();
         $estados = $this->estadosGestionables();
@@ -357,10 +372,10 @@ class ClientePotencialController extends Controller
             ? 'SI'
             : 'N/A';
         $productoCierre = 'N/A';
-        if ($solicitudCierre?->es_vinculacion) {
-            $productoCierre = $solicitudCierre->es_ahorro
-                ? 'Ahorro'
-                : 'Credito: ' . ($solicitudCierre->linea_credito_gestion ?: 'Sin linea');
+        if ($solicitudCierre?->es_ahorro) {
+            $productoCierre = 'Ahorro: ' . ($solicitudCierre->linea_ahorro ?: 'Sin linea') . ' - $' . number_format((float) ($solicitudCierre->monto_ahorro ?? 0), 0, ',', '.');
+        } elseif ($solicitudCierre?->es_vinculacion) {
+            $productoCierre = 'Credito: ' . ($solicitudCierre->linea_credito_gestion ?: 'Sin linea');
         }
 
         return view('clientes_potenciales.show', compact('cliente', 'estados', 'origenes', 'lineasCredito', 'desembolsoEstados', 'historicoAsociados', 'vinculacionCierre', 'productoCierre'));
@@ -576,6 +591,7 @@ class ClientePotencialController extends Controller
             'desembolso_estado' => ['required', 'in:' . implode(',', self::ESTADOS_DESEMBOLSO)],
             'detalle' => ['nullable', 'string', 'max:2000'],
         ]);
+        $esDesembolsado = strtolower(trim($data['desembolso_estado'])) === 'desembolsado';
 
         if ($this->isSupervisor()) {
             $cliente->update([
@@ -583,7 +599,7 @@ class ClientePotencialController extends Controller
                 'desembolso_estado_pendiente' => null,
                 'desembolso_solicitado_at' => null,
                 'desembolso_solicitado_por' => null,
-                'desembolso_aprobado_at' => now(),
+                'desembolso_aprobado_at' => $esDesembolsado ? now() : null,
                 'desembolso_motivo_devolucion' => null,
                 'ultima_gestion_at' => now(),
             ]);
@@ -594,6 +610,28 @@ class ClientePotencialController extends Controller
                 'cliente_potencial_id' => $cliente->id,
                 'tipo' => 'desembolso_supervisor',
                 'detalle' => trim('Supervisor actualizo estado desembolso a: ' . $data['desembolso_estado'] . '. ' . ($data['detalle'] ?? '')),
+            ]);
+
+            return back()->with('ok', 'Estado de desembolso actualizado.');
+        }
+
+        if (!$esDesembolsado) {
+            $cliente->update([
+                'desembolso_estado' => $data['desembolso_estado'],
+                'desembolso_estado_pendiente' => null,
+                'desembolso_solicitado_at' => null,
+                'desembolso_solicitado_por' => null,
+                'desembolso_aprobado_at' => null,
+                'desembolso_motivo_devolucion' => null,
+                'ultima_gestion_at' => now(),
+            ]);
+
+            Gestion::create([
+                'asesor_id' => auth()->id(),
+                'estado_id' => $cliente->estado_id,
+                'cliente_potencial_id' => $cliente->id,
+                'tipo' => 'desembolso_directo',
+                'detalle' => trim('Cambio directo de desembolso a: ' . $data['desembolso_estado'] . '. ' . ($data['detalle'] ?? '')),
             ]);
 
             return back()->with('ok', 'Estado de desembolso actualizado.');

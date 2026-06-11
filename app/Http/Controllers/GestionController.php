@@ -22,13 +22,17 @@ class GestionController extends Controller
         'ADELANTO DE SALARIO',
     ];
 
+    private const LINEAS_AHORRO = [
+        'CDAT',
+        'AHORRO CONTRACTUAL',
+    ];
+
     private const ESTADOS_DESEMBOLSO = [
         'Por desembolsar',
         'desembolsado',
         'aplazado',
-        'negados',
+        'negado',
         'desistido',
-        'pendiente de radicar',
     ];
 
     public function store(Request $request)
@@ -53,6 +57,9 @@ class GestionController extends Controller
             'desembolso_estado' => ['nullable', 'in:' . implode(',', self::ESTADOS_DESEMBOLSO)],
             'es_vinculacion' => ['nullable', 'boolean'],
             'es_ahorro' => ['nullable', 'boolean'],
+            'linea_ahorro' => ['nullable', 'in:' . implode(',', self::LINEAS_AHORRO)],
+            'monto_ahorro' => ['nullable', 'regex:/^[0-9]+$/'],
+            'es_asesoria_comercial' => ['nullable', 'boolean'],
         ]);
 
         if (!$request->filled('base_asignada_id') && !$request->filled('cliente_potencial_id')) {
@@ -99,13 +106,43 @@ class GestionController extends Controller
         $esCierre = $estadoGestion?->slug === 'cerrado';
         $esVinculacion = $request->boolean('es_vinculacion');
         $esAhorro = $request->boolean('es_ahorro');
+        $esAsesoriaComercial = $request->boolean('es_asesoria_comercial');
+        if ($esAhorro) {
+            $request->validate([
+                'linea_ahorro' => ['required', 'in:' . implode(',', self::LINEAS_AHORRO)],
+                'monto_ahorro' => ['required', 'regex:/^[0-9]+$/'],
+            ]);
+        }
+        if ($esAsesoriaComercial && !$esCierre) {
+            return back()->withErrors(['es_asesoria_comercial' => 'La asesoria comercial solo se puede marcar cuando el estado resultante es Cerrado.'])->withInput();
+        }
+        if ($esAsesoriaComercial) {
+            $esVinculacion = false;
+            $esAhorro = false;
+            $request->merge([
+                'efectivo' => 'NO',
+                'linea_credito' => null,
+                'monto_linea_credito' => null,
+                'desembolso_estado' => null,
+                'es_vinculacion' => null,
+                'es_ahorro' => null,
+                'linea_ahorro' => null,
+                'monto_ahorro' => null,
+            ]);
+        }
+        $desembolsoEstadoCierre = $request->input('efectivo') === 'SI'
+            ? 'Por desembolsar'
+            : $request->input('desembolso_estado');
+        $requiereAprobacionSupervisor = $esCierre && $request->input('efectivo') === 'SI';
         if ($esCierre) {
             $request->validate([
                 'efectivo' => ['required', 'in:SI,NO'],
-                'monto_linea_credito' => [(!$esAhorro && $request->input('efectivo') === 'SI' ? 'required' : 'nullable'), 'regex:/^[0-9]*$/'],
-                'desembolso_estado' => [$esAhorro ? 'nullable' : 'required', 'in:' . implode(',', self::ESTADOS_DESEMBOLSO)],
+                'monto_linea_credito' => [(!$esAhorro && !$esAsesoriaComercial && $request->input('efectivo') === 'SI' ? 'required' : 'nullable'), 'regex:/^[0-9]*$/'],
+                'desembolso_estado' => ['nullable', 'in:' . implode(',', self::ESTADOS_DESEMBOLSO)],
             ]);
-            $data['estado_id'] = $estadoPendienteId;
+            if ($requiereAprobacionSupervisor) {
+                $data['estado_id'] = $estadoPendienteId;
+            }
         }
 
         if (!$esCierre && empty($data['estado_id'])) {
@@ -126,11 +163,17 @@ class GestionController extends Controller
             }
         }
 
-        $lineaCreditoGestion = $esAhorro ? null : $request->input('linea_credito');
+        $lineaCreditoGestion = ($esAhorro || $esAsesoriaComercial) ? null : $request->input('linea_credito');
+        if ($esCierre && $request->input('efectivo') === 'NO') {
+            $desembolsoEstadoCierre = null;
+        }
 
         $data['es_vinculacion'] = $esVinculacion;
         $data['es_ahorro'] = $esAhorro;
+        $data['es_asesoria_comercial'] = $esAsesoriaComercial;
         $data['linea_credito_gestion'] = $lineaCreditoGestion;
+        $data['linea_ahorro'] = $esAhorro ? $request->input('linea_ahorro') : null;
+        $data['monto_ahorro'] = $esAhorro ? (int) $request->input('monto_ahorro') : null;
 
         $data['asesor_id'] = $user?->id;
         $gestion = Gestion::create($data);
@@ -141,22 +184,24 @@ class GestionController extends Controller
                 $update['estado_id'] = $gestion->estado_id;
             }
             $update['ultima_gestion_at'] = now();
-            if ($esAhorro) {
+            if ($esAhorro || $esAsesoriaComercial) {
                 $update['linea_credito'] = null;
-                $update['monto_solicitado'] = null;
+                if ($esAhorro) {
+                    $update['monto_solicitado'] = null;
+                }
             } elseif ($request->filled('linea_credito')) {
                 $update['linea_credito'] = $request->input('linea_credito');
             }
-            if (!$esAhorro && $request->filled('monto_solicitado')) {
+            if (!$esAhorro && !$esAsesoriaComercial && $request->filled('monto_solicitado')) {
                 $update['monto_solicitado'] = (int) $request->input('monto_solicitado');
             }
 
             if ($esCierre) {
                 $update['efectivo'] = $request->input('efectivo') === 'SI';
-                $update['monto_linea_credito'] = (!$esAhorro && $request->input('efectivo') === 'SI')
+                $update['monto_linea_credito'] = (!$esAhorro && !$esAsesoriaComercial && $request->input('efectivo') === 'SI')
                     ? (int) $request->input('monto_linea_credito')
                     : null;
-                $update['desembolso_estado'] = $esAhorro ? null : $request->input('desembolso_estado');
+                $update['desembolso_estado'] = ($esAhorro || $esAsesoriaComercial) ? null : $desembolsoEstadoCierre;
                 $update['desembolso_estado_pendiente'] = null;
                 $update['desembolso_solicitado_at'] = null;
                 $update['desembolso_solicitado_por'] = null;
@@ -183,7 +228,7 @@ class GestionController extends Controller
                 }
             }
 
-            if ($esCierre) {
+            if ($requiereAprobacionSupervisor) {
                 $supervisores = User::where('role', 'supervisor')->pluck('id');
                 foreach ($supervisores as $supervisorId) {
                     AppNotification::create([
@@ -198,9 +243,9 @@ class GestionController extends Controller
                 }
             }
 
-            $msg = $esCierre
+            $msg = $requiereAprobacionSupervisor
                 ? 'Gestion enviada a aprobacion del supervisor.'
-                : 'Gestion registrada.';
+                : ($esCierre ? 'Gestion cerrada sin aprobacion de supervisor.' : 'Gestion registrada.');
             return redirect()->route('base-asignada.show', $gestion->base_asignada_id)->with('ok', $msg);
         }
 
@@ -213,15 +258,15 @@ class GestionController extends Controller
         if ($hasClienteCol('ultima_gestion_at')) {
             $update['ultima_gestion_at'] = now();
         }
-        if ($esAhorro && $hasClienteCol('linea_credito')) {
+        if (($esAhorro || $esAsesoriaComercial) && $hasClienteCol('linea_credito')) {
             $update['linea_credito'] = null;
-            if ($hasClienteCol('monto_solicitado')) {
+            if ($esAhorro && $hasClienteCol('monto_solicitado')) {
                 $update['monto_solicitado'] = null;
             }
         } elseif ($hasClienteCol('linea_credito') && $request->filled('linea_credito')) {
             $update['linea_credito'] = $request->input('linea_credito');
         }
-        if (!$esAhorro && $hasClienteCol('monto_solicitado') && $request->filled('monto_solicitado')) {
+        if (!$esAhorro && !$esAsesoriaComercial && $hasClienteCol('monto_solicitado') && $request->filled('monto_solicitado')) {
             $update['monto_solicitado'] = (int) $request->input('monto_solicitado');
         }
 
@@ -230,12 +275,12 @@ class GestionController extends Controller
                 $update['efectivo'] = $request->input('efectivo') === 'SI';
             }
             if ($hasClienteCol('monto_linea_credito')) {
-                $update['monto_linea_credito'] = (!$esAhorro && $request->input('efectivo') === 'SI')
+                $update['monto_linea_credito'] = (!$esAhorro && !$esAsesoriaComercial && $request->input('efectivo') === 'SI')
                     ? (int) $request->input('monto_linea_credito')
                     : null;
             }
             if ($hasClienteCol('desembolso_estado')) {
-                $update['desembolso_estado'] = $esAhorro ? null : $request->input('desembolso_estado');
+                $update['desembolso_estado'] = ($esAhorro || $esAsesoriaComercial) ? null : $desembolsoEstadoCierre;
             }
             if ($hasClienteCol('desembolso_estado_pendiente')) {
                 $update['desembolso_estado_pendiente'] = null;
@@ -262,7 +307,7 @@ class GestionController extends Controller
 
         ClientePotencial::whereKey($gestion->cliente_potencial_id)->update($update);
 
-        if ($esCierre) {
+        if ($requiereAprobacionSupervisor) {
             $supervisores = User::where('role', 'supervisor')->pluck('id');
             foreach ($supervisores as $supervisorId) {
                 AppNotification::create([
@@ -277,9 +322,9 @@ class GestionController extends Controller
             }
         }
 
-        $msg = $esCierre
+        $msg = $requiereAprobacionSupervisor
             ? 'Gestion enviada a aprobacion del supervisor.'
-            : 'Gestion registrada.';
+            : ($esCierre ? 'Gestion cerrada sin aprobacion de supervisor.' : 'Gestion registrada.');
         return redirect()->route('clientes-potenciales.show', $gestion->cliente_potencial_id)->with('ok', $msg);
     }
 }

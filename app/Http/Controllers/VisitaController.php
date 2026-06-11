@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Visita;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class VisitaController extends Controller
 {
@@ -37,11 +38,16 @@ class VisitaController extends Controller
         $finCalendario = (clone $finMes)->endOfWeek(Carbon::SUNDAY);
 
         $query = Visita::with('asesor')
-            ->whereBetween('programada_at', [$inicioCalendario, $finCalendario])
+            ->where('programada_at', '>=', $inicioCalendario->toDateString() . ' 00:00:00')
+            ->where('programada_at', '<=', $finCalendario->toDateString() . ' 23:59:59')
             ->orderBy('programada_at');
 
         $visitas = $query->get();
-        $visitasPorDia = $visitas->groupBy(fn (Visita $v) => $v->programada_at->format('Y-m-d'));
+        $visitasPorDia = $visitas->groupBy(function (Visita $visita) {
+            $fechaProgramada = (string) $visita->getRawOriginal('programada_at');
+
+            return substr($fechaProgramada, 0, 10) ?: $visita->programada_at?->format('Y-m-d');
+        });
         $asesores = User::whereIn('role', ['comercial', 'supervisor'])->orderBy('name')->get();
 
         return view('visitas.index', compact(
@@ -63,6 +69,7 @@ class VisitaController extends Controller
             'cliente_nombre' => ['required', 'string', 'max:255'],
             'telefono' => ['nullable', 'string', 'max:50'],
             'direccion' => ['nullable', 'string', 'max:255'],
+            'detalle_inicial' => ['nullable', 'string'],
             'programada_at' => ['required', 'date'],
             'finaliza_at' => ['required', 'date', 'after_or_equal:programada_at'],
         ]);
@@ -104,14 +111,23 @@ class VisitaController extends Controller
             'resultado' => ['required', 'string', 'min:3'],
         ]);
 
-        $visita->update([
+        $fechaProgramada = $visita->getRawOriginal('programada_at') ?: $visita->programada_at;
+        $fechaFinaliza = $visita->getRawOriginal('finaliza_at');
+
+        DB::table('visitas')->where('id', $visita->id)->update([
+            'programada_at' => $fechaProgramada,
+            'finaliza_at' => $fechaFinaliza,
             'estado' => $data['estado'],
             'resultado' => $data['resultado'],
             'registrada_at' => now(),
+            'updated_at' => now(),
         ]);
 
         return redirect()
-            ->route('visitas.index', ['mes' => $visita->programada_at->month, 'anio' => $visita->programada_at->year])
+            ->route('visitas.index', [
+                'mes' => Carbon::parse($fechaProgramada)->month,
+                'anio' => Carbon::parse($fechaProgramada)->year,
+            ])
             ->with('ok', 'Resultado de visita registrado.');
     }
 }

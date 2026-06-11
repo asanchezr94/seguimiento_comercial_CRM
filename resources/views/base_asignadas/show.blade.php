@@ -121,7 +121,7 @@
 @if($esPendienteSupervisor)
     <p><strong>Registro en proceso:</strong> esta en Pendiente de aprobacion (supervisor). No se puede modificar hasta que sea aprobado o devuelto.</p>
 @endif
-@if($esCerrado)
+@if($esCerrado && (bool) $base->efectivo)
 <h3>Estado de desembolso</h3>
 <form method="post" action="{{ route('base-asignada.desembolso.solicitar', $base->id) }}">
     @csrf
@@ -184,7 +184,7 @@
         <div class="field checkbox-field">
             <label>Vinculacion</label>
             <label class="checkbox-card">
-                <input type="checkbox" name="es_vinculacion" value="1" @checked(old('es_vinculacion'))>
+                <input type="checkbox" name="es_vinculacion" id="es_vinculacion" value="1" @checked(old('es_vinculacion'))>
                 <span>Marcar como vinculacion</span>
             </label>
         </div>
@@ -193,6 +193,25 @@
             <label class="checkbox-card">
                 <input type="checkbox" name="es_ahorro" id="es_ahorro" value="1" @checked(old('es_ahorro'))>
                 <span>Es ahorro</span>
+            </label>
+        </div>
+        <div class="field">
+            <label>Linea de ahorro</label>
+            <select name="linea_ahorro" id="linea_ahorro" disabled>
+                <option value="">Seleccione</option>
+                <option value="CDAT" @selected(old('linea_ahorro') === 'CDAT')>CDAT</option>
+                <option value="AHORRO CONTRACTUAL" @selected(old('linea_ahorro') === 'AHORRO CONTRACTUAL')>AHORRO CONTRACTUAL</option>
+            </select>
+        </div>
+        <div class="field">
+            <label>Monto ahorro</label>
+            <input type="text" inputmode="numeric" pattern="[0-9]*" id="monto_ahorro" name="monto_ahorro" value="{{ old('monto_ahorro') }}" placeholder="Ej: 500000" disabled>
+        </div>
+        <div class="field checkbox-field">
+            <label>Asesoria comercial</label>
+            <label class="checkbox-card">
+                <input type="checkbox" name="es_asesoria_comercial" id="es_asesoria_comercial" value="1" @checked(old('es_asesoria_comercial')) disabled>
+                <span>Es asesoria comercial</span>
             </label>
         </div>
         <div class="field">
@@ -223,7 +242,7 @@
             <label>Monto aprobado</label>
             <input type="text" inputmode="numeric" pattern="[0-9]*" id="monto_linea_credito" name="monto_linea_credito" value="{{ old('monto_linea_credito') }}" placeholder="Ej: 10000000" disabled>
         </div>
-        <div class="field">
+        <div class="field" style="display:none;">
             <label>Estado desembolso</label>
             <select name="desembolso_estado" id="desembolso_estado" disabled>
                 <option value="">Seleccione</option>
@@ -239,7 +258,7 @@
 
 <h3>Historial</h3>
 <table data-no-global-filters>
-    <thead><tr><th>Fecha</th><th>Registrado por</th><th>Tipo de gestion</th><th>Estado</th><th>Vinculacion</th><th>Producto</th><th>Proxima gestion</th><th>Tiempo invertido</th><th>Detalle</th></tr></thead>
+    <thead><tr><th>Fecha</th><th>Registrado por</th><th>Tipo de gestion</th><th>Estado</th><th>Vinculacion</th><th>Asesoria</th><th>Producto</th><th>Proxima gestion</th><th>Tiempo invertido</th><th>Detalle</th></tr></thead>
     <tbody>
         @forelse($gestiones as $gestion)
             <tr>
@@ -248,9 +267,14 @@
                 <td>{{ $gestion->tipo }}</td>
                 <td>{{ $gestion->estado?->nombre }}</td>
                 <td>{{ $gestion->es_vinculacion ? 'SI' : 'NO' }}</td>
+                <td>{{ $gestion->es_asesoria_comercial ? 'SI' : 'NO' }}</td>
                 <td>
-                    @if($gestion->es_vinculacion)
-                        {{ $gestion->es_ahorro ? 'Ahorro' : 'Credito: ' . ($gestion->linea_credito_gestion ?? 'Sin linea') }}
+                    @if($gestion->es_asesoria_comercial)
+                        Asesoria comercial
+                    @elseif($gestion->es_ahorro)
+                        Ahorro: {{ $gestion->linea_ahorro ?? 'Sin linea' }} - ${{ number_format((float) ($gestion->monto_ahorro ?? 0), 0, ',', '.') }}
+                    @elseif($gestion->es_vinculacion)
+                        Credito: {{ $gestion->linea_credito_gestion ?? 'Sin linea' }}
                     @else
                         N/A
                     @endif
@@ -260,7 +284,7 @@
                 <td>{{ $gestion->detalle }}</td>
             </tr>
         @empty
-            <tr><td colspan="9">Sin gestiones.</td></tr>
+            <tr><td colspan="10">Sin gestiones.</td></tr>
         @endforelse
     </tbody>
 </table>
@@ -302,23 +326,39 @@
     const monto = document.getElementById('monto_linea_credito');
     const desembolsoEstado = document.getElementById('desembolso_estado');
     const ahorro = document.getElementById('es_ahorro');
+    const vinculacion = document.getElementById('es_vinculacion');
+    const asesoriaComercial = document.getElementById('es_asesoria_comercial');
     const lineaCredito = document.getElementById('linea_credito');
+    const lineaAhorro = document.getElementById('linea_ahorro');
+    const montoAhorro = document.getElementById('monto_ahorro');
 
     function syncCierreFields() {
         if (!estado || !efectivo || !monto) return;
         const slug = estado.options[estado.selectedIndex]?.dataset?.slug || '';
         const esCerrado = slug === 'cerrado';
+        if (asesoriaComercial) {
+            asesoriaComercial.disabled = !esCerrado;
+            if (!esCerrado) asesoriaComercial.checked = false;
+        }
+        const esAsesoria = asesoriaComercial?.checked || false;
+        if (esAsesoria) {
+            efectivo.value = 'NO';
+        }
         const esAhorro = ahorro?.checked || false;
         efectivo.disabled = !esCerrado;
+        if (esAsesoria) efectivo.disabled = false;
         const esEfectivoSi = efectivo.value === 'SI';
-        monto.disabled = esAhorro || !esCerrado || !esEfectivoSi;
+        monto.disabled = esAsesoria || esAhorro || !esCerrado || !esEfectivoSi;
         if (desembolsoEstado) {
-            desembolsoEstado.disabled = esAhorro || !esCerrado;
-            desembolsoEstado.required = !esAhorro && esCerrado;
+            desembolsoEstado.disabled = esAsesoria || esAhorro || !esCerrado || esEfectivoSi;
+            desembolsoEstado.required = !esAsesoria && !esAhorro && esCerrado && !esEfectivoSi;
+            if (esCerrado && esEfectivoSi && !esAsesoria && !esAhorro) {
+                desembolsoEstado.value = 'Por desembolsar';
+            }
         }
         efectivo.required = esCerrado;
-        monto.required = !esAhorro && esCerrado && esEfectivoSi;
-        if (esAhorro || !esCerrado || !esEfectivoSi) {
+        monto.required = !esAsesoria && !esAhorro && esCerrado && esEfectivoSi;
+        if (esAsesoria || esAhorro || !esCerrado || !esEfectivoSi) {
             monto.value = '';
         }
         if (!esCerrado) {
@@ -326,6 +366,9 @@
             if (desembolsoEstado) desembolsoEstado.value = '';
         }
         if (esAhorro && desembolsoEstado) {
+            desembolsoEstado.value = '';
+        }
+        if (esAsesoria && desembolsoEstado) {
             desembolsoEstado.value = '';
         }
     }
@@ -338,26 +381,51 @@
         if (!montoSolicitado) return;
         montoSolicitado.value = (montoSolicitado.value || '').replace(/\D+/g, '');
     }
+    function sanitizeMontoAhorro() {
+        if (!montoAhorro) return;
+        montoAhorro.value = (montoAhorro.value || '').replace(/\D+/g, '');
+    }
     function syncProductoFields() {
         if (!ahorro || !lineaCredito) return;
-        lineaCredito.disabled = ahorro.checked;
+        const esAsesoria = asesoriaComercial?.checked || false;
+        if (esAsesoria) {
+            if (ahorro) ahorro.checked = false;
+            if (vinculacion) vinculacion.checked = false;
+        }
+        lineaCredito.disabled = esAsesoria || ahorro.checked;
+        if (lineaAhorro) {
+            lineaAhorro.disabled = esAsesoria || !ahorro.checked;
+            lineaAhorro.required = !esAsesoria && ahorro.checked;
+            if (lineaAhorro.disabled) lineaAhorro.value = '';
+        }
+        if (montoAhorro) {
+            montoAhorro.disabled = esAsesoria || !ahorro.checked;
+            montoAhorro.required = !esAsesoria && ahorro.checked;
+            if (montoAhorro.disabled) montoAhorro.value = '';
+        }
         if (montoSolicitado) {
             montoSolicitado.disabled = ahorro.checked;
         }
-        if (ahorro.checked) {
+        if (esAsesoria || ahorro.checked) {
             lineaCredito.value = '';
-            if (montoSolicitado) montoSolicitado.value = '';
+            if (ahorro.checked && montoSolicitado) montoSolicitado.value = '';
         }
+        if (ahorro) ahorro.disabled = esAsesoria;
+        if (vinculacion) vinculacion.disabled = esAsesoria;
         syncCierreFields();
     }
 
     estado?.addEventListener('change', syncCierreFields);
     efectivo?.addEventListener('change', syncCierreFields);
     ahorro?.addEventListener('change', syncProductoFields);
+    vinculacion?.addEventListener('change', syncProductoFields);
+    asesoriaComercial?.addEventListener('change', syncProductoFields);
     monto?.addEventListener('input', sanitizeMonto);
+    montoAhorro?.addEventListener('input', sanitizeMontoAhorro);
     montoSolicitado?.addEventListener('input', sanitizeMontoSolicitado);
     montoSolicitado?.closest('form')?.addEventListener('submit', sanitizeMontoSolicitado);
     monto?.closest('form')?.addEventListener('submit', sanitizeMonto);
+    montoAhorro?.closest('form')?.addEventListener('submit', sanitizeMontoAhorro);
     syncCierreFields();
     syncProductoFields();
     (function () {

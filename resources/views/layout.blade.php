@@ -233,6 +233,10 @@
             border-color: var(--primary-strong);
             transform: translateY(-1px);
         }
+        .inline-filters button:hover,
+        .inline-filters .btn-link:hover {
+            transform: none;
+        }
         button:active, .btn-link:active { transform: translateY(1px); }
         a {
             color: #075f8a;

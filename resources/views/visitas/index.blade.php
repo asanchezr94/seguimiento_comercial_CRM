@@ -67,11 +67,14 @@
         text-align: center;
     }
     .calendar-day {
-        min-height: 150px;
+        height: 190px;
         border: 1px solid #b5d1e4;
         border-radius: 8px;
         background: #fff;
-        padding: 8px;
+        padding: 7px;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
     }
     .calendar-day.out-month {
         background: #f5f9fc;
@@ -81,28 +84,57 @@
         font-weight: 800;
         color: #073f61;
         margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+    }
+    .visit-count {
+        border-radius: 999px;
+        background: #dff0fb;
+        color: #075985;
+        font-size: 0.72rem;
+        padding: 2px 7px;
+        font-weight: 800;
+        white-space: nowrap;
+    }
+    .visits-list {
+        overflow-y: auto;
+        padding-right: 2px;
+        min-height: 0;
     }
     .visit-card {
         border: 1px solid #b6d1e5;
         border-left: 4px solid var(--primary);
         border-radius: 8px;
-        padding: 7px;
-        margin-bottom: 6px;
+        padding: 5px 6px;
+        margin-bottom: 5px;
         background: #f8fcff;
         white-space: normal;
+        font-size: 0.82rem;
+        line-height: 1.2;
     }
     .visit-card.realizada { border-left-color: #0f7a34; }
     .visit-card.cancelada { border-left-color: #b42318; }
     .visit-meta {
         color: var(--muted);
-        font-size: 0.82rem;
-        margin: 2px 0;
+        font-size: 0.74rem;
+        margin: 1px 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
     .visit-actions {
-        margin-top: 6px;
+        margin-top: 4px;
         display: flex;
-        gap: 6px;
+        gap: 4px;
         flex-wrap: wrap;
+    }
+    .visit-actions .btn-link,
+    .visit-actions button {
+        padding: 4px 7px;
+        font-size: 0.74rem;
+        min-height: auto;
     }
     @media (max-width: 980px) {
         .calendar-grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
@@ -119,34 +151,46 @@
     @while($cursor <= $finCalendario)
         @php($key = $cursor->format('Y-m-d'))
         <div class="calendar-day @if($cursor->month !== $mes) out-month @endif">
-            <div class="calendar-date">{{ $cursor->format('d/m') }}</div>
-            @foreach(($visitasPorDia[$key] ?? collect()) as $visita)
-                <div class="visit-card {{ $visita->estado }}">
-                    <strong>
-                        {{ $visita->programada_at->format('H:i') }}
-                        @if($visita->finaliza_at)
-                            - {{ $visita->finaliza_at->format('H:i') }}
+            @php($visitasDia = $visitasPorDia[$key] ?? collect())
+            <div class="calendar-date">
+                <span>{{ $cursor->format('d/m') }}</span>
+                @if($visitasDia->count() > 0)
+                    <span class="visit-count">{{ $visitasDia->count() }}</span>
+                @endif
+            </div>
+            <div class="visits-list">
+                @foreach($visitasDia as $visita)
+                    <div class="visit-card {{ $visita->estado }}">
+                        <strong title="{{ $visita->cliente_nombre }}">
+                            {{ $visita->programada_at->format('H:i') }}
+                            @if($visita->finaliza_at)
+                                - {{ $visita->finaliza_at->format('H:i') }}
+                            @endif
+                            | {{ \Illuminate\Support\Str::limit($visita->cliente_nombre, 24) }}
+                        </strong>
+                        <div class="visit-meta">Programada: {{ $visita->programada_at->format('d/m/Y') }}</div>
+                        <div class="visit-meta">{{ $visita->asesor?->name ?? 'N/A' }}</div>
+                        @if($visita->direccion)
+                            <div class="visit-meta" title="{{ $visita->direccion }}">{{ $visita->direccion }}</div>
                         @endif
-                        | {{ $visita->cliente_nombre }}
-                    </strong>
-                    <div class="visit-meta">{{ $visita->asesor?->name ?? 'N/A' }}</div>
-                    @if($visita->direccion)
-                        <div class="visit-meta">{{ $visita->direccion }}</div>
-                    @endif
-                    <div class="visit-meta">Estado: {{ ucfirst($visita->estado) }}</div>
-                    @if($visita->resultado)
-                        <div class="visit-meta">{{ $visita->resultado }}</div>
-                    @endif
-                    <div class="visit-actions">
-                        <a class="btn-link" href="{{ route('visitas.show', $visita->id) }}">Ver</a>
-                    </div>
-                    @if($visita->estado === 'programada' && (auth()->user()?->role === 'supervisor' || $visita->user_id === auth()->id()))
+                        <div class="visit-meta">Estado: {{ ucfirst($visita->estado) }}</div>
+                        @if($visita->detalle_inicial)
+                            <div class="visit-meta" title="{{ $visita->detalle_inicial }}">Detalle: {{ \Illuminate\Support\Str::limit($visita->detalle_inicial, 32) }}</div>
+                        @endif
+                        @if($visita->resultado)
+                            <div class="visit-meta" title="{{ $visita->resultado }}">Resultado: {{ \Illuminate\Support\Str::limit($visita->resultado, 32) }}</div>
+                        @endif
                         <div class="visit-actions">
-                            <button type="button" class="btn-registrar-visita" data-action="{{ route('visitas.registrar', $visita->id) }}" data-cliente="{{ $visita->cliente_nombre }}">Registrar</button>
+                            <a class="btn-link" href="{{ route('visitas.show', $visita->id) }}">Ver</a>
                         </div>
-                    @endif
-                </div>
-            @endforeach
+                        @if($visita->estado === 'programada' && (auth()->user()?->role === 'supervisor' || $visita->user_id === auth()->id()))
+                            <div class="visit-actions">
+                                <button type="button" class="btn-registrar-visita" data-action="{{ route('visitas.registrar', $visita->id) }}" data-cliente="{{ $visita->cliente_nombre }}">Registrar</button>
+                            </div>
+                        @endif
+                    </div>
+                @endforeach
+            </div>
         </div>
         @php($cursor->addDay())
     @endwhile
@@ -178,6 +222,8 @@
             <input type="text" name="direccion">
             <label>Titulo / motivo</label>
             <input type="text" name="titulo" placeholder="Ej: Visita comercial">
+            <label>Detalle inicial</label>
+            <textarea name="detalle_inicial" placeholder="Describe el objetivo o contexto de la visita..."></textarea>
             <label>Fecha y hora inicio</label>
             <input type="datetime-local" name="programada_at" required>
             <label>Fecha y hora fin</label>
@@ -201,7 +247,7 @@
                 <option value="realizada">Realizada</option>
                 <option value="cancelada">Cancelada</option>
             </select>
-            <label>Resultado de la visita</label>
+            <label>Resultado / observacion final</label>
             <textarea name="resultado" required placeholder="Describe que se hizo en la visita..."></textarea>
             <button type="submit">Guardar resultado</button>
         </form>
